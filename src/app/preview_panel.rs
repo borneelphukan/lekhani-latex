@@ -27,7 +27,6 @@ impl App {
             let zoom_delta = ui.input(|i| i.zoom_delta());
             if zoom_delta != 1.0 {
                 new_zoom = (zoom * zoom_delta).clamp(0.25, 4.0);
-                do_render = true;
             }
         }
 
@@ -35,12 +34,10 @@ impl App {
             ui.horizontal(|ui| {
                 if ui.button("−").clicked() {
                     new_zoom = (zoom - 0.25).max(0.25);
-                    do_render = true;
                 }
                 ui.label(format!("{}%", (zoom * 100.0) as u32));
                 if ui.button("+").clicked() {
                     new_zoom = (zoom + 0.25).min(4.0);
-                    do_render = true;
                 }
                 ui.separator();
                 let has_prev = page > 0;

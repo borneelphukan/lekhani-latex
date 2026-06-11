@@ -88,15 +88,32 @@ impl App {
                         "Preview hidden".into()
                     };
                 }
-                if ui.button("Toggle Theme").clicked() {
-                    ui.close();
-                    self.theme = match self.theme {
-                        Theme::Dark => Theme::Light,
-                        Theme::Light => Theme::Dark,
-                    };
-                    self.apply_theme(ui.ctx().clone());
-                    ui.ctx().request_repaint();
-                }
+                ui.menu_button("Theme", |ui| {
+                    if ui
+                        .selectable_value(&mut self.theme, Theme::System, "System")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.apply_theme(ui.ctx().clone());
+                        ui.ctx().request_repaint();
+                    }
+                    if ui
+                        .selectable_value(&mut self.theme, Theme::Light, "Light")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.apply_theme(ui.ctx().clone());
+                        ui.ctx().request_repaint();
+                    }
+                    if ui
+                        .selectable_value(&mut self.theme, Theme::Dark, "Dark")
+                        .clicked()
+                    {
+                        ui.close();
+                        self.apply_theme(ui.ctx().clone());
+                        ui.ctx().request_repaint();
+                    }
+                });
             });
         });
     }

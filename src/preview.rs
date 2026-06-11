@@ -13,10 +13,11 @@ pub enum PreviewEvent {
 }
 
 #[derive(Debug)]
-pub struct PreviewViewer {
+    pub struct PreviewViewer {
     receiver: mpsc::Receiver<PreviewEvent>,
     sender: mpsc::Sender<PreviewEvent>,
     pub current_image: Option<ColorImage>,
+    pub base_image: Option<ColorImage>,
     pub zoom: f32,
     pub render_error: Option<String>,
     pub last_pdf_path: Option<PathBuf>,
@@ -32,6 +33,7 @@ impl PreviewViewer {
             receiver: rx,
             sender: tx,
             current_image: None,
+            base_image: None,
             zoom: 1.0,
             render_error: None,
             last_pdf_path: None,
@@ -98,9 +100,9 @@ impl PreviewViewer {
         let path = pdf_path.to_path_buf();
         let temp_dir = std::env::temp_dir();
         let pid = std::process::id();
-        let output_stem = format!("latex_writer_preview_{}", pid);
+        let output_stem = format!("latex_writer_preview_{}_{}", pid, page);
         let output_path = temp_dir.join(format!("{}.png", output_stem));
-        let dpi = (150.0 * self.zoom) as u32;
+        let dpi = 600u32;
         let tool = renderer;
 
         thread::spawn(move || {
@@ -241,6 +243,7 @@ impl PreviewViewer {
             Ok(event) => {
                 match &event {
                     PreviewEvent::NewImage(img) => {
+                        self.base_image = Some(img.clone());
                         self.current_image = Some(img.clone());
                         self.render_error = None;
                     }

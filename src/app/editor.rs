@@ -31,11 +31,12 @@ impl App {
 
     fn paint_gutter(&self, ui: &egui::Ui, rect: egui::Rect, line_count: usize) {
         let painter = ui.painter_at(rect);
-        let bg = self.theme.gutter_bg();
+        let ctx = ui.ctx();
+        let bg = self.theme.gutter_bg(ctx);
         painter.rect_filled(rect, 0.0, bg);
 
         let sep_x = rect.right() - 1.0;
-        let sep_color = self.theme.gutter_sep();
+        let sep_color = self.theme.gutter_sep(ctx);
         painter.line_segment(
             [
                 egui::pos2(sep_x, rect.top()),
@@ -44,7 +45,7 @@ impl App {
             egui::Stroke::new(1.0, sep_color),
         );
 
-        let text_color = self.theme.gutter_text();
+        let text_color = self.theme.gutter_text(ctx);
         let font_id = FontId::monospace(12.0);
 
         let line_height = 16.0;
@@ -67,15 +68,16 @@ impl App {
 
     fn text_edit_area(&mut self, ui: &mut egui::Ui) {
         let theme = self.theme;
+        let ctx = ui.ctx().clone();
 
         let tab = self.active_tab_mut();
         let mut text = std::mem::take(&mut tab.buffer.text);
         let mut layouter =
-            |layouter_ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+            move |layouter_ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
                 let text = buf.as_str();
                 let tokens = lexer::tokenize(text);
 
-                let syn = theme.syntax_colors();
+                let syn = theme.syntax_colors(&ctx);
 
                 let job = egui::text::LayoutJob {
                     text: text.into(),
@@ -166,10 +168,11 @@ impl App {
             );
             let matches = self.completion_matches.clone();
             let range = self.completion_byte_range;
-            let bg_fill = if self.theme == Theme::Dark {
-                Color32::from_rgb(40, 44, 52)
-            } else {
-                Color32::from_rgb(255, 255, 255)
+            let resolved = self.theme.resolve(ui.ctx());
+            let bg_fill = match resolved {
+                Theme::Dark => Color32::from_rgb(40, 44, 52),
+                Theme::Light => Color32::from_rgb(255, 255, 255),
+                Theme::System => unreachable!(),
             };
 
             let mut close = false;

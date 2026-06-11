@@ -33,16 +33,10 @@ enum FileDialogAction {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let initial_theme = if cc.egui_ctx.global_style().visuals.dark_mode {
-            Theme::Dark
-        } else {
-            Theme::Light
-        };
-
         let mut app = Self {
             tabs: Vec::new(),
             active_tab: 0,
-            theme: initial_theme,
+            theme: Theme::System,
             auto_compile: true,
             file_dialog_action: None,
             completion_visible: false,
@@ -74,13 +68,24 @@ impl App {
 
     fn apply_theme(&self, ctx: egui::Context) {
         let mut style = (*ctx.global_style()).clone();
-        match self.theme {
+        let resolved = match self.theme {
+            Theme::System => {
+                if style.visuals.dark_mode {
+                    Theme::Dark
+                } else {
+                    Theme::Light
+                }
+            }
+            theme => theme,
+        };
+        match resolved {
             Theme::Dark => {
                 style.visuals = egui::Visuals::dark();
             }
             Theme::Light => {
                 style.visuals = egui::Visuals::light();
             }
+            Theme::System => unreachable!(),
         }
         ctx.set_global_style(style);
     }
@@ -268,7 +273,7 @@ impl App {
                 };
 
                 let bg = if is_active {
-                    self.theme.active_tab_bg()
+                    self.theme.active_tab_bg(ui.ctx())
                 } else {
                     Color32::TRANSPARENT
                 };
