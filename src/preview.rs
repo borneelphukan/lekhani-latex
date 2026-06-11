@@ -79,6 +79,21 @@ impl PreviewViewer {
             }
         };
 
+        if self.num_pages.is_none() {
+            self.num_pages = Self::get_pdf_page_count(pdf_path);
+        }
+
+        if let Some(num_pages) = self.num_pages {
+            if page >= num_pages {
+                let _ = self.sender.send(PreviewEvent::Error(format!(
+                    "Page {} does not exist (PDF has {} pages)",
+                    page + 1,
+                    num_pages
+                )));
+                return;
+            }
+        }
+
         let tx = self.sender.clone();
         let path = pdf_path.to_path_buf();
         let temp_dir = std::env::temp_dir();
@@ -125,6 +140,23 @@ impl PreviewViewer {
         ] {
             if Command::new(tool).arg("--version").output().is_ok() {
                 return Some(tool);
+            }
+        }
+        None
+    }
+
+    fn get_pdf_page_count(input: &Path) -> Option<usize> {
+        let output = Command::new("pdfinfo")
+            .arg(input)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if let Some(count_str) = line.strip_prefix("Pages:") {
+                return count_str.trim().parse().ok();
             }
         }
         None

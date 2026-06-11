@@ -132,7 +132,6 @@ pub const LATEX_COMMANDS: &[&str] = &[
     "\\centering",
     "\\raggedright",
     "\\raggedleft",
-    "\\texttt{}",
     "\\textsc{}",
     "\\textsf{}",
     "\\textsuperscript{}",
