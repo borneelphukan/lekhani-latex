@@ -12,8 +12,7 @@ pub enum PreviewEvent {
     Unsupported,
 }
 
-#[derive(Debug)]
-    pub struct PreviewViewer {
+pub struct PreviewViewer {
     receiver: mpsc::Receiver<PreviewEvent>,
     sender: mpsc::Sender<PreviewEvent>,
     pub current_image: Option<ColorImage>,
@@ -23,7 +22,9 @@ pub enum PreviewEvent {
     pub last_pdf_path: Option<PathBuf>,
     pub page: usize,
     pub num_pages: Option<usize>,
-    renderer: Option<&'static str>,
+    pub image_size: Option<[usize; 2]>,
+    renderer: Option<String>,
+    render_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl PreviewViewer {
@@ -39,7 +40,9 @@ impl PreviewViewer {
             last_pdf_path: None,
             page: 0,
             num_pages: None,
+            image_size: None,
             renderer: None,
+            render_handle: None,
         }
     }
 
@@ -73,8 +76,8 @@ impl PreviewViewer {
         if self.renderer.is_none() {
             self.renderer = Self::find_renderer();
         }
-        let renderer = match self.renderer {
-            Some(r) => r,
+        let renderer = match &self.renderer {
+            Some(r) => r.clone(),
             None => {
                 let _ = self.sender.send(PreviewEvent::Unsupported);
                 return;
@@ -102,11 +105,15 @@ impl PreviewViewer {
         let pid = std::process::id();
         let output_stem = format!("latex_writer_preview_{}_{}", pid, page);
         let output_path = temp_dir.join(format!("{}.png", output_stem));
-        let dpi = 600u32;
+        let dpi = 300u32;
         let tool = renderer;
 
-        thread::spawn(move || {
-            let result = Self::run_renderer(tool, dpi, &output_path, &path, page);
+        if let Some(handle) = self.render_handle.take() {
+            let _ = handle.join();
+        }
+
+        let handle = thread::spawn(move || {
+            let result = Self::run_renderer(&tool, dpi, &output_path, &path, page);
             match result {
                 Ok(()) => match image::open(&output_path) {
                     Ok(img) => {
@@ -129,9 +136,10 @@ impl PreviewViewer {
                 }
             }
         });
+        self.render_handle = Some(handle);
     }
 
-    fn find_renderer() -> Option<&'static str> {
+    fn find_renderer() -> Option<String> {
         for tool in &[
             "mutool",
             "mudraw",
@@ -141,17 +149,43 @@ impl PreviewViewer {
             "pdftoppm",
         ] {
             if Command::new(tool).arg("--version").output().is_ok() {
-                return Some(tool);
+                return Some(tool.to_string());
             }
         }
+
+        // On macOS, Homebrew installs to /opt/homebrew/bin (Apple Silicon) or
+        // /usr/local/bin (Intel), which may not be in PATH when launched from GUI.
+        #[cfg(target_os = "macos")]
+        for dir in &["/opt/homebrew/bin", "/usr/local/bin"] {
+            for tool in &["mutool", "mudraw", "gs", "pdftoppm"] {
+                let full_path = format!("{}/{}", dir, tool);
+                if Command::new(&full_path).arg("--version").output().is_ok() {
+                    return Some(full_path);
+                }
+            }
+        }
+
         None
     }
 
     fn get_pdf_page_count(input: &Path) -> Option<usize> {
-        let output = Command::new("pdfinfo")
-            .arg(input)
-            .output()
-            .ok()?;
+        let pdfinfo = if Command::new("pdfinfo").arg("--version").output().is_ok() {
+            "pdfinfo".to_string()
+        } else {
+            #[cfg(target_os = "macos")]
+            for dir in &["/opt/homebrew/bin", "/usr/local/bin"] {
+                let full_path = format!("{}/pdfinfo", dir);
+                if Command::new(&full_path).arg("--version").output().is_ok() {
+                    return Self::run_pdfinfo(&full_path, input);
+                }
+            }
+            return None;
+        };
+        Self::run_pdfinfo(&pdfinfo, input)
+    }
+
+    fn run_pdfinfo(pdfinfo: &str, input: &Path) -> Option<usize> {
+        let output = Command::new(pdfinfo).arg(input).output().ok()?;
         if !output.status.success() {
             return None;
         }
@@ -173,8 +207,12 @@ impl PreviewViewer {
     ) -> Result<(), String> {
         let page_str = (page + 1).to_string();
         let dpi_str = dpi.to_string();
+        let tool_name = Path::new(tool)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(tool);
 
-        match tool {
+        match tool_name {
             "mutool" | "mudraw" => {
                 let out = Command::new(tool)
                     .args(["draw", "-r", &dpi_str, "-o"])
@@ -213,7 +251,7 @@ impl PreviewViewer {
             "pdftoppm" => {
                 let stem = output.with_extension("");
                 let stem_str = stem.to_string_lossy();
-                let out = Command::new("pdftoppm")
+                let out = Command::new(tool)
                     .args([
                         "-f",
                         &page_str,
@@ -245,6 +283,7 @@ impl PreviewViewer {
                     PreviewEvent::NewImage(img) => {
                         self.base_image = Some(img.clone());
                         self.current_image = Some(img.clone());
+                        self.image_size = Some(img.size);
                         self.render_error = None;
                     }
                     PreviewEvent::Error(e) => {
@@ -260,6 +299,14 @@ impl PreviewViewer {
             }
             Err(mpsc::TryRecvError::Empty) => None,
             Err(mpsc::TryRecvError::Disconnected) => None,
+        }
+    }
+}
+
+impl Drop for PreviewViewer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.render_handle.take() {
+            let _ = handle.join();
         }
     }
 }

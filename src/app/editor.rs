@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use egui::{Color32, FontId, ScrollArea, TextEdit};
 use crate::app::App;
 use crate::completions;
@@ -69,6 +70,58 @@ impl App {
     fn text_edit_area(&mut self, ui: &mut egui::Ui) {
         let theme = self.theme;
         let ctx = ui.ctx().clone();
+
+        let mut nav_up = false;
+        let mut nav_down = false;
+        let mut nav_enter = false;
+        let mut nav_escape = false;
+
+        if self.completion_visible {
+            ctx.input_mut(|i| {
+                let mut kept = Vec::new();
+                for e in std::mem::take(&mut i.events) {
+                    let consume = match &e {
+                        egui::Event::Key {
+                            key: egui::Key::ArrowDown,
+                            pressed: true,
+                            ..
+                        } => {
+                            nav_down = true;
+                            true
+                        }
+                        egui::Event::Key {
+                            key: egui::Key::ArrowUp,
+                            pressed: true,
+                            ..
+                        } => {
+                            nav_up = true;
+                            true
+                        }
+                        egui::Event::Key {
+                            key: egui::Key::Enter,
+                            pressed: true,
+                            ..
+                        } => {
+                            nav_enter = true;
+                            true
+                        }
+                        egui::Event::Key {
+                            key: egui::Key::Escape,
+                            pressed: true,
+                            ..
+                        } => {
+                            nav_escape = true;
+                            true
+                        }
+                        _ => false,
+                    };
+                    if !consume {
+                        kept.push(e);
+                    }
+                }
+                i.events = kept;
+            });
+        }
 
         let tab = self.active_tab_mut();
         let mut text = std::mem::take(&mut tab.buffer.text);
@@ -154,9 +207,25 @@ impl App {
                         self.completion_matches =
                             matches.into_iter().map(|s| s.to_string()).collect();
                         self.completion_byte_range = Some((bslash, cursor));
+                        self.completion_selected = 0;
                     }
                 }
             }
+        }
+
+        if nav_escape {
+            self.completion_visible = false;
+        }
+        if nav_up {
+            if self.completion_selected == 0 {
+                self.completion_selected = self.completion_matches.len() - 1;
+            } else {
+                self.completion_selected -= 1;
+            }
+        }
+        if nav_down {
+            self.completion_selected =
+                (self.completion_selected + 1) % self.completion_matches.len();
         }
 
         if self.completion_visible {
@@ -168,6 +237,7 @@ impl App {
             );
             let matches = self.completion_matches.clone();
             let range = self.completion_byte_range;
+            let selected_index = self.completion_selected;
             let resolved = self.theme.resolve(ui.ctx());
             let bg_fill = match resolved {
                 Theme::Dark => Color32::from_rgb(40, 44, 52),
@@ -175,8 +245,9 @@ impl App {
                 Theme::System => unreachable!(),
             };
 
-            let mut close = false;
-            let mut selected: Option<usize> = None;
+            let close = Cell::new(nav_enter);
+            let selected: Cell<Option<usize>> =
+                Cell::new(if nav_enter { Some(selected_index) } else { None });
             let popup_id = egui::Id::new("latex_completions");
 
             let _ = egui::Area::new(popup_id)
@@ -195,17 +266,31 @@ impl App {
                             .show(ui, |ui| {
                                 for (i, cmd) in matches.iter().enumerate() {
                                     let label = cmd.replacen('\\', "", 1);
-                                    if ui.button(&label).clicked() {
-                                        close = true;
-                                        selected = Some(i);
+                                    let is_selected = i == selected_index;
+                                    let mut button = egui::Button::new(&label);
+                                    if is_selected {
+                                        let select_bg = match resolved {
+                                            Theme::Dark => {
+                                                Color32::from_rgb(60, 70, 90)
+                                            }
+                                            Theme::Light => {
+                                                Color32::from_rgb(200, 200, 220)
+                                            }
+                                            Theme::System => unreachable!(),
+                                        };
+                                        button = button.fill(select_bg);
+                                    }
+                                    if ui.add(button).clicked() {
+                                        close.set(true);
+                                        selected.set(Some(i));
                                     }
                                 }
                             });
                     });
                 });
 
-            if close {
-                if let Some(idx) = selected {
+            if close.get() {
+                if let Some(idx) = selected.get() {
                     if let Some(replacement) = matches.get(idx) {
                         if let Some((start, end)) = range {
                             let tab = self.active_tab_mut();

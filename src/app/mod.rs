@@ -22,6 +22,7 @@ pub struct App {
     completion_visible: bool,
     completion_matches: Vec<String>,
     completion_byte_range: Option<(usize, usize)>,
+    completion_selected: usize,
 }
 
 enum FileDialogAction {
@@ -42,6 +43,7 @@ impl App {
             completion_visible: false,
             completion_matches: Vec::new(),
             completion_byte_range: None,
+            completion_selected: 0,
         };
 
         let mut args = std::env::args().skip(1);
@@ -55,6 +57,17 @@ impl App {
         }
 
         app.apply_theme(cc.egui_ctx.clone());
+
+        // Add Hack as fallback for Proportional to support Geometric Shapes (▲▼)
+        // Ubuntu-Light and NotoEmoji lack U+25B2/U+25BC but Hack has full coverage.
+        let mut fonts = egui::FontDefinitions::default();
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .push("Hack".to_owned());
+        cc.egui_ctx.set_fonts(fonts);
+
         app
     }
 
@@ -251,6 +264,8 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         for tab in &mut self.tabs {
+            // Release GPU textures before the rendering context is destroyed
+            tab.preview_texture = None;
             if tab.buffer.dirty {
                 if let Some(path) = tab.buffer.path().map(|p| p.to_path_buf()) {
                     let _ = tab.buffer.save_as(&path);
@@ -272,20 +287,12 @@ impl App {
                     self.tabs[i].title.clone()
                 };
 
-                let bg = if is_active {
-                    self.theme.active_tab_bg(ui.ctx())
-                } else {
-                    Color32::TRANSPARENT
-                };
-
                 egui::Frame::NONE
-                    .fill(bg)
                     .inner_margin(egui::Margin::symmetric(6, 2))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.set_min_size(egui::vec2(40.0, 20.0));
-                            let resp =
-                                ui.add(egui::Button::new(&title).selected(is_active));
+                            let resp = ui.add(egui::Button::new(&title));
                             if resp.clicked() {
                                 self.active_tab = i;
                             }

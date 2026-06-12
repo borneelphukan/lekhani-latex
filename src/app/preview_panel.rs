@@ -15,6 +15,7 @@ impl App {
         let page = self.active_tab().preview.page;
         let tex = self.active_tab().preview_texture.clone();
         let num_pages = self.active_tab().preview.num_pages;
+        let image_size = self.active_tab().preview.image_size;
         let mut scroll_offset = self.active_tab().scroll_offset;
 
         let mut do_render = false;
@@ -52,16 +53,16 @@ impl App {
                     do_render = true;
                 }
                 ui.separator();
-                if ui.button("\u{25C0} ").on_hover_text("Left").clicked() {
+                if ui.button(" \u{25C0} ").on_hover_text("Left").clicked() {
                     pending_scroll = Some(egui::vec2(-50.0, 0.0));
                 }
-                if ui.button("\u{25B6} ").on_hover_text("Right").clicked() {
+                if ui.button(" \u{25B6} ").on_hover_text("Right").clicked() {
                     pending_scroll = Some(egui::vec2(50.0, 0.0));
                 }
-                if ui.button("\u{25B2}").on_hover_text("Up").clicked() {
+                if ui.button(" \u{25B2} ").on_hover_text("Up").clicked() {
                     pending_scroll = Some(egui::vec2(0.0, -50.0));
                 }
-                if ui.button("\u{25BC}").on_hover_text("Down").clicked() {
+                if ui.button(" \u{25BC} ").on_hover_text("Down").clicked() {
                     pending_scroll = Some(egui::vec2(0.0, 50.0));
                 }
             });
@@ -82,8 +83,21 @@ impl App {
 
             if let Some(tex) = tex {
                 let img_size = tex.size_vec2();
+
+                // Auto-fit zoom to page width on first render
+                if new_zoom == 1.0 && image_size.map_or(false, |s| s[0] > 0) {
+                    let avail_width = ui.available_width() - 10.0;
+                    if avail_width > 0.0 {
+                        let fit = avail_width / img_size.x;
+                        if fit < 1.0 {
+                            new_zoom = fit.max(0.25).min(4.0);
+                        }
+                    }
+                }
+
+                let display_size = img_size * new_zoom;
                 let image = Image::from_texture(
-                    egui::load::SizedTexture::new(tex.id(), img_size),
+                    egui::load::SizedTexture::new(tex.id(), display_size),
                 );
 
                 scroll_offset += pending_scroll.unwrap_or_default();
@@ -93,7 +107,7 @@ impl App {
                     .vertical_scroll_offset(scroll_offset.y)
                     .horizontal_scroll_offset(scroll_offset.x)
                     .show(ui, |ui| {
-                        ui.set_min_size(img_size);
+                        ui.set_min_size(display_size);
                         ui.add(image);
                     });
 
@@ -123,18 +137,18 @@ impl App {
             }
         }
 
+        let pdf_path = self.active_tab().preview.last_pdf_path.clone();
         self.active_tab_mut().scroll_offset = scroll_offset;
+        self.active_tab_mut().preview.zoom = new_zoom;
+        self.active_tab_mut().preview.page = new_page;
 
         if open_externally {
             self.active_tab_mut().preview.open_externally();
         }
 
         if do_render {
-            let tab = self.active_tab_mut();
-            tab.preview.zoom = new_zoom;
-            tab.preview.page = new_page;
-            if let Some(path) = tab.preview.last_pdf_path.clone() {
-                tab.preview.render_pdf(&path, new_page);
+            if let Some(path) = pdf_path {
+                self.active_tab_mut().preview.render_pdf(&path, new_page);
             }
         }
     }

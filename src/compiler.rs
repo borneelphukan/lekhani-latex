@@ -14,12 +14,12 @@ pub enum CompileEvent {
     Failure(Vec<String>),
 }
 
-#[derive(Debug)]
 pub struct CompilerBridge {
     config: CompilerConfig,
     receiver: mpsc::Receiver<CompileEvent>,
     sender: mpsc::Sender<CompileEvent>,
     status: CompileStatus,
+    join_handle: Option<thread::JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,16 +38,22 @@ impl CompilerBridge {
             receiver: rx,
             sender: tx,
             status: CompileStatus::Idle,
+            join_handle: None,
         }
     }
 
     pub fn compile(&mut self, file_path: &Path) {
+        // Join any previous compilation thread before starting a new one
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+
         let tx = self.sender.clone();
         let config = self.config.clone();
         let path = file_path.to_path_buf();
         self.status = CompileStatus::Running;
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let _ = tx.send(CompileEvent::Started);
 
             let metadata = match std::fs::metadata(&path) {
@@ -146,6 +152,8 @@ impl CompilerBridge {
                 }
             }
         });
+
+        self.join_handle = Some(handle);
     }
 
     pub fn poll(&mut self) -> Option<CompileEvent> {
@@ -172,6 +180,14 @@ impl CompilerBridge {
 
     pub fn reset_status(&mut self) {
         self.status = CompileStatus::Idle;
+    }
+}
+
+impl Drop for CompilerBridge {
+    fn drop(&mut self) {
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 

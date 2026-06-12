@@ -67,12 +67,7 @@ impl App {
             }
 
             if has_tabs {
-                ui.menu_button("Build", |ui| {
-                    ui.checkbox(
-                        &mut self.auto_compile,
-                        "Auto-compile on save",
-                    );
-                });
+                ui.menu_button("Build", |_ui| {});
             } else {
                 ui.menu_button("Build", |_ui| {});
             }

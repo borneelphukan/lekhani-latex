@@ -77,14 +77,6 @@ impl Theme {
         }
     }
 
-    pub fn active_tab_bg(self, ctx: &egui::Context) -> Color32 {
-        match self.resolve(ctx) {
-            Theme::Dark => Color32::from_rgb(40, 44, 52),
-            Theme::Light => Color32::from_rgb(240, 240, 244),
-            Theme::System => unreachable!(),
-        }
-    }
-
     pub fn gutter_bg(self, ctx: &egui::Context) -> Color32 {
         match self.resolve(ctx) {
             Theme::Dark => Color32::from_rgb(30, 34, 40),
