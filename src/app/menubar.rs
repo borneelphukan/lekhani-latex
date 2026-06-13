@@ -71,8 +71,7 @@ impl App {
                     };
                 }
                 let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-                if ui.add(egui::Button::selectable(fs, "\u{2386} Fullscreen"))
-                    .on_hover_text("F12")
+                if ui.add(egui::Button::selectable(fs, "\u{26F6} Fullscreen    F12"))
                     .clicked()
                 {
                     ui.close();
@@ -140,6 +139,10 @@ impl App {
             .add_filter("LaTeX", &["tex", "sty", "cls"])
             .pick_file()
         {
+            if let Some(existing) = self.tabs.iter().position(|t| t.buffer.path() == Some(&path)) {
+                self.active_tab = existing;
+                return;
+            }
             let tab = Tab::load(&path);
             self.tabs.push(tab);
             self.active_tab = self.tabs.len() - 1;

@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::time::Instant;
 use egui::{Color32, FontId, ScrollArea, TextEdit};
 use crate::app::App;
 use crate::completions;
@@ -430,6 +431,9 @@ impl App {
             .nth(cursor_char)
             .map_or(text.len(), |(b, _)| b);
         let changed = response.changed();
+        if changed {
+            self.last_content_change = Some(Instant::now());
+        }
         let tab = self.active_tab_mut();
         tab.buffer.text = text;
         tab.buffer.cursor = cursor_pos;

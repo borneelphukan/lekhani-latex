@@ -1,6 +1,17 @@
 #![allow(dead_code)]
 
 use regex::Regex;
+use std::sync::OnceLock;
+
+fn tokenize_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\\([a-zA-Z]+|[^a-zA-Z])|%.*$|\$\$|\$|[{}]").unwrap())
+}
+
+fn tokenize_multiline_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?m)\\([a-zA-Z]+|[^a-zA-Z])|%.*$|\$\$|\$|[{}]").unwrap())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -63,11 +74,9 @@ fn tokenize_with(text: &str, re: &Regex) -> Vec<Token> {
 }
 
 pub fn tokenize(text: &str) -> Vec<Token> {
-    let re = Regex::new(r"(?m)\\([a-zA-Z]+|[^a-zA-Z])|%.*$|\$\$|\$|[{}]").unwrap();
-    tokenize_with(text, &re)
+    tokenize_with(text, tokenize_multiline_re())
 }
 
 pub fn tokenize_line(text: &str) -> Vec<Token> {
-    let re = Regex::new(r"\\([a-zA-Z]+|[^a-zA-Z])|%.*$|\$\$|\$|[{}]").unwrap();
-    tokenize_with(text, &re)
+    tokenize_with(text, tokenize_re())
 }

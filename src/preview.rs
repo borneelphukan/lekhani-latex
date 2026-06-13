@@ -49,24 +49,9 @@ impl PreviewViewer {
     pub fn open_externally(&self) {
         if let Some(path) = &self.last_pdf_path {
             let path_str = path.to_string_lossy();
-            #[cfg(target_os = "windows")]
-            {
-                let _ = Command::new("cmd")
-                    .args(["/c", "start", "", path_str.as_ref()])
-                    .spawn();
-            }
-            #[cfg(target_os = "macos")]
-            {
-                let _ = Command::new("open")
-                    .arg(path_str.as_ref())
-                    .spawn();
-            }
-            #[cfg(target_os = "linux")]
-            {
-                let _ = Command::new("xdg-open")
-                    .arg(path_str.as_ref())
-                    .spawn();
-            }
+            let _ = Command::new("cmd")
+                .args(["/c", "start", "", path_str.as_ref()])
+                .spawn();
         }
     }
 
@@ -105,7 +90,7 @@ impl PreviewViewer {
         let pid = std::process::id();
         let output_stem = format!("lekhani_preview_{}_{}", pid, page);
         let output_path = temp_dir.join(format!("{}.png", output_stem));
-        let dpi = 300u32;
+        let dpi = 150u32;
         let tool = renderer;
 
         if let Some(handle) = self.render_handle.take() {
@@ -153,35 +138,14 @@ impl PreviewViewer {
             }
         }
 
-        // On macOS, Homebrew installs to /opt/homebrew/bin (Apple Silicon) or
-        // /usr/local/bin (Intel), which may not be in PATH when launched from GUI.
-        #[cfg(target_os = "macos")]
-        for dir in &["/opt/homebrew/bin", "/usr/local/bin"] {
-            for tool in &["mutool", "mudraw", "gs", "pdftoppm"] {
-                let full_path = format!("{}/{}", dir, tool);
-                if Command::new(&full_path).arg("--version").output().is_ok() {
-                    return Some(full_path);
-                }
-            }
-        }
-
         None
     }
 
     fn get_pdf_page_count(input: &Path) -> Option<usize> {
-        let pdfinfo = if Command::new("pdfinfo").arg("--version").output().is_ok() {
-            "pdfinfo".to_string()
-        } else {
-            #[cfg(target_os = "macos")]
-            for dir in &["/opt/homebrew/bin", "/usr/local/bin"] {
-                let full_path = format!("{}/pdfinfo", dir);
-                if Command::new(&full_path).arg("--version").output().is_ok() {
-                    return Self::run_pdfinfo(&full_path, input);
-                }
-            }
+        if !Command::new("pdfinfo").arg("--version").output().is_ok() {
             return None;
-        };
-        Self::run_pdfinfo(&pdfinfo, input)
+        }
+        Self::run_pdfinfo("pdfinfo", input)
     }
 
     fn run_pdfinfo(pdfinfo: &str, input: &Path) -> Option<usize> {

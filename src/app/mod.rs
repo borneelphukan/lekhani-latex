@@ -9,7 +9,13 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use egui::{CentralPanel, Color32, Panel};
+use std::sync::OnceLock;
 use regex::Regex;
+
+fn error_line_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"l\.(\d+)").unwrap())
+}
 
 use crate::compiler::CompileEvent;
 use crate::preview::PreviewEvent;
@@ -49,6 +55,7 @@ pub struct App {
     update_tx: std::sync::mpsc::Sender<UpdateMessage>,
     heading_numbered: bool,
     last_auto_compile: Option<Instant>,
+    last_content_change: Option<Instant>,
 }
 
 enum FileDialogAction {
@@ -81,6 +88,7 @@ impl App {
             update_tx,
             heading_numbered: true,
             last_auto_compile: None,
+            last_content_change: None,
         };
 
         let mut args = std::env::args().skip(1);
@@ -172,7 +180,7 @@ impl App {
                         tab.status_message = "Compilation failed".into();
                         tab.error_message = Some(errors.join("\n"));
                         tab.output_log.clear();
-                        let re_line = Regex::new(r"l\.(\d+)").unwrap();
+                        let re_line = error_line_regex();
                         let mut all_error_lines: Vec<usize> = Vec::new();
                         let mut j = 0;
                         while j < errors.len() {
@@ -302,7 +310,13 @@ impl eframe::App for App {
 
         let now = Instant::now();
         if self.auto_compile && !self.tabs.is_empty() {
-            if self.last_auto_compile.map_or(true, |t| now.duration_since(t).as_secs_f32() >= 1.5) {
+            let idle_time = self.last_content_change
+                .map(|t| now.duration_since(t).as_secs_f32())
+                .unwrap_or(f32::MAX);
+            let compile_interval = self.last_auto_compile
+                .map(|t| now.duration_since(t).as_secs_f32())
+                .unwrap_or(f32::MAX);
+            if idle_time >= 0.8 && compile_interval >= 1.2 {
                 let tab = self.active_tab_mut();
                 if let Some(p) = tab.buffer.path().map(|p| p.to_path_buf()) {
                     if tab.buffer.dirty {
@@ -361,7 +375,10 @@ impl eframe::App for App {
         CentralPanel::default().show_inside(ui, |ui| {
             if self.tabs.is_empty() {
                 ui.vertical_centered(|ui| {
-                    ui.add_space(120.0);
+                    let avail = ui.available_height();
+                    let content_height = 124.0;
+                    let top = ((avail - content_height) / 2.0).max(0.0);
+                    ui.add_space(top);
                     ui.heading("Lekhani Latex");
                     ui.add_space(8.0);
                     ui.colored_label(
@@ -834,9 +851,12 @@ impl App {
     }
 
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
+        let mut remove_tab = None;
+        let mut switch_to = None;
+        let tab_count = self.tabs.len();
+
         ui.horizontal(|ui| {
-            let mut remove_tab = None;
-            for i in 0..self.tabs.len() {
+            for i in 0..tab_count {
                 let is_active = i == self.active_tab;
                 let title = if self.tabs[i].buffer.dirty {
                     format!("{} •", self.tabs[i].title)
@@ -844,46 +864,91 @@ impl App {
                     self.tabs[i].title.clone()
                 };
 
-                egui::Frame::NONE
-                    .inner_margin(egui::Margin::symmetric(6, 2))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.set_min_size(egui::vec2(40.0, 20.0));
-                            let resp = ui.add(egui::Button::new(&title));
-                            if resp.clicked() {
-                                self.active_tab = i;
-                            }
-                            if is_active {
-                                let close_resp = ui.add_sized(
-                                    egui::vec2(14.0, 14.0),
-                                    egui::Label::new("×")
-                                        .sense(egui::Sense::click()),
-                                );
-                                if close_resp.clicked() {
-                                    if !self.tabs[i].buffer.dirty
-                                        || rfd::MessageDialog::new()
-                                            .set_title("Unsaved Changes")
-                                            .set_description(
-                                                "You have unsaved changes. Close this workspace?",
-                                            )
-                                            .set_buttons(rfd::MessageButtons::YesNo)
-                                            .show()
-                                            == rfd::MessageDialogResult::Yes
-                                    {
-                                        remove_tab = Some(i);
-                                    }
-                                }
-                            }
-                        });
-                    });
-            }
-            if let Some(idx) = remove_tab {
-                self.tabs.remove(idx);
-                if !self.tabs.is_empty() {
-                    self.active_tab = self.active_tab.min(self.tabs.len() - 1);
+                let is_dark = ui.visuals().dark_mode;
+                let fill = if is_active {
+                    if is_dark { Color32::from_rgb(48, 50, 56) } else { Color32::from_rgb(225, 226, 232) }
+                } else {
+                    if is_dark { Color32::from_rgb(35, 37, 42) } else { Color32::from_rgb(205, 206, 212) }
+                };
+
+                let title_w = (title.len() as f32) * 7.5 + 12.0;
+                let close_w = if is_active { 24.0 } else { 0.0 };
+                let total_w = (title_w + close_w).max(40.0);
+
+                let (tab_rect, response) = ui.allocate_exact_size(
+                    egui::vec2(total_w, 28.0),
+                    egui::Sense::click(),
+                );
+
+                ui.painter().rect_filled(tab_rect, 0, fill);
+
+                let text_pos = egui::pos2(
+                    tab_rect.left() + 6.0,
+                    tab_rect.center().y,
+                );
+                ui.painter().text(
+                    text_pos,
+                    egui::Align2::LEFT_CENTER,
+                    &title,
+                    egui::FontId::proportional(14.0),
+                    ui.visuals().text_color(),
+                );
+
+                if response.clicked() {
+                    // Determine if click was on the close button area
+                    let close_rect = egui::Rect::from_min_size(
+                        egui::pos2(tab_rect.right() - 22.0, tab_rect.top() + 5.0),
+                        egui::vec2(18.0, 18.0),
+                    );
+                    let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
+                    let on_close = pointer.map_or(false, |p| close_rect.contains(p));
+
+                    if on_close && is_active {
+                        if !self.tabs[i].buffer.dirty
+                            || rfd::MessageDialog::new()
+                                .set_title("Unsaved Changes")
+                                .set_description(
+                                    "You have unsaved changes. Close this workspace?",
+                                )
+                                .set_buttons(rfd::MessageButtons::YesNo)
+                                .show()
+                                == rfd::MessageDialogResult::Yes
+                        {
+                            remove_tab = Some(i);
+                        }
+                    } else {
+                        switch_to = Some(i);
+                    }
+                }
+
+                if is_active {
+                    let close_rect = egui::Rect::from_min_size(
+                        egui::pos2(tab_rect.right() - 22.0, tab_rect.top() + 5.0),
+                        egui::vec2(18.0, 18.0),
+                    );
+                    let mut child_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .id_salt(("close", i))
+                            .max_rect(close_rect)
+                            .layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)),
+                    );
+                    child_ui.style_mut().visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                    child_ui.style_mut().visuals.widgets.hovered.bg_fill = Color32::from_white_alpha(25);
+                    child_ui.style_mut().visuals.widgets.active.bg_fill = Color32::from_white_alpha(50);
+                    child_ui.add_sized(egui::vec2(18.0, 18.0), egui::Button::new("×"));
                 }
             }
         });
+
+        if let Some(i) = switch_to {
+            self.active_tab = i;
+        }
+        if let Some(idx) = remove_tab {
+            self.tabs.remove(idx);
+            if !self.tabs.is_empty() {
+                self.active_tab = self.active_tab.min(self.tabs.len() - 1);
+            }
+        }
     }
 
     fn output_bar(&mut self, ui: &mut egui::Ui) {
