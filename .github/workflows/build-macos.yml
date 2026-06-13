@@ -23,17 +23,78 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      - name: Generate app icon
+        run: |
+          mkdir -p assets
+          ICONSET="latex-writer.iconset"
+          mkdir -p "$ICONSET"
+
+          python3 << 'PYEOF'
+import struct, zlib
+
+def create_png(width, height):
+    def chunk(ctype, data):
+        c = ctype + data
+        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+
+    header = b'\x89PNG\r\n\x1a\n'
+    ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)
+        for x in range(width):
+            cx, cy = x - width // 2, y - height // 2
+            dist = (cx * cx + cy * cy) ** 0.5
+            r = width * 0.4
+            if dist < r:
+                raw.extend([40, 120, 200])
+            else:
+                raw.extend([240, 240, 240])
+
+    idat = chunk(b'IDAT', zlib.compress(bytes(raw)))
+    iend = chunk(b'IEND', b'')
+    return header + ihdr + idat + iend
+
+iconset = "latex-writer.iconset"
+sizes = [(16, 16), (32, 32), (128, 128), (256, 256), (512, 512)]
+for w, h in sizes:
+    data = create_png(w, h)
+    with open(f'{iconset}/icon_{w}x{h}.png', 'wb') as f:
+        f.write(data)
+    data2x = create_png(w * 2, h * 2)
+    with open(f'{iconset}/icon_{w}x{h}@2x.png', 'wb') as f:
+        f.write(data2x)
+PYEOF
+
+          iconutil -c icns "$ICONSET" -o assets/icon.icns 2>&1 || echo "Icon generation failed, continuing without icon"
+
       - name: Create .app bundle
         run: |
           APP_NAME="latex-writer"
           APP_DIR="$APP_NAME.app"
+          rm -rf "$APP_DIR"
           mkdir -p "$APP_DIR/Contents/MacOS"
           mkdir -p "$APP_DIR/Contents/Resources"
           cp target/release/$APP_NAME "$APP_DIR/Contents/MacOS/"
+          chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
           cp assets/Info.plist "$APP_DIR/Contents/"
           if [ -f assets/icon.icns ]; then
             cp assets/icon.icns "$APP_DIR/Contents/Resources/"
           fi
+          plutil -lint "$APP_DIR/Contents/Info.plist"
+
+      - name: Sign the app bundle
+        run: |
+          APP_NAME="latex-writer"
+          APP_DIR="$APP_NAME.app"
+          codesign --force --sign - "$APP_DIR/Contents/MacOS/$APP_NAME"
+          codesign --force --sign - "$APP_DIR"
+
+      - name: Verify code signature
+        run: |
+          codesign -vvv --deep "latex-writer.app" 2>&1
+          spctl -a -t exec -vvv "latex-writer.app" 2>&1 || echo "spctl assessment note (expected for ad-hoc signed apps)"
 
       - name: Create .dmg
         run: |

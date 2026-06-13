@@ -18,6 +18,8 @@
   <string>0.1.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+    <key>CFBundleIconFile</key>
+  <string>icon</string>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
 </dict>
