@@ -1,0 +1,52 @@
+name: Build macOS (.dmg)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Create .app bundle
+        run: |
+          APP_NAME="latex-writer"
+          APP_DIR="$APP_NAME.app"
+          mkdir -p "$APP_DIR/Contents/MacOS"
+          mkdir -p "$APP_DIR/Contents/Resources"
+          cp target/release/$APP_NAME "$APP_DIR/Contents/MacOS/"
+          cp assets/Info.plist "$APP_DIR/Contents/"
+          if [ -f assets/icon.icns ]; then
+            cp assets/icon.icns "$APP_DIR/Contents/Resources/"
+          fi
+
+      - name: Create .dmg
+        run: |
+          APP_NAME="latex-writer"
+          DMG_NAME="${APP_NAME}-macos.dmg"
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$APP_NAME.app" \
+            -ov -format UDZO \
+            "$DMG_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latex-writer-macos
+          path: latex-writer-macos.dmg

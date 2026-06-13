@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>latex-writer</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.latex-writer.app</string>
+  <key>CFBundleName</key>
+  <string>LaTeX Writer</string>
+  <key>CFBundleDisplayName</key>
+  <string>LaTeX Writer</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+</dict>
+</plist>
