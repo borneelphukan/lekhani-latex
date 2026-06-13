@@ -18,19 +18,22 @@ impl App {
             36.0
         };
 
+        let error_lines = self.active_tab().error_lines.clone();
+        let line_height = ui.ctx().fonts_mut(|f| f.row_height(&FontId::monospace(14.0)));
+
         ui.horizontal_top(|ui| {
             let height = ui.available_height();
             let (gutter_rect, _) = ui.allocate_exact_size(
                 egui::Vec2::new(gutter_width, height),
                 egui::Sense::hover(),
             );
-            self.paint_gutter(ui, gutter_rect, line_count);
+            self.paint_gutter(ui, gutter_rect, line_count, &error_lines, line_height);
 
-            self.text_edit_area(ui);
+            self.text_edit_area(ui, &error_lines, line_height);
         });
     }
 
-    fn paint_gutter(&self, ui: &egui::Ui, rect: egui::Rect, line_count: usize) {
+    fn paint_gutter(&self, ui: &egui::Ui, rect: egui::Rect, line_count: usize, error_lines: &[usize], line_height: f32) {
         let painter = ui.painter_at(rect);
         let ctx = ui.ctx();
         let bg = self.theme.gutter_bg(ctx);
@@ -47,15 +50,23 @@ impl App {
         );
 
         let text_color = self.theme.gutter_text(ctx);
-        let font_id = FontId::monospace(12.0);
+        let error_dot_color = Color32::from_rgb(220, 60, 60);
+        let font_id = FontId::monospace(14.0);
 
-        let line_height = 16.0;
-        let start_y = rect.top() + 4.0;
+        let start_y = rect.top();
+        let dot_x = rect.left() + 6.0;
 
         for i in 1..=line_count {
             let y = start_y + (i - 1) as f32 * line_height;
             if y > rect.bottom() {
                 break;
+            }
+            if error_lines.contains(&i) {
+                painter.circle_filled(
+                    egui::pos2(dot_x, y + 5.0),
+                    3.0,
+                    error_dot_color,
+                );
             }
             painter.text(
                 egui::pos2(rect.right() - 6.0, y),
@@ -67,9 +78,10 @@ impl App {
         }
     }
 
-    fn text_edit_area(&mut self, ui: &mut egui::Ui) {
+    fn text_edit_area(&mut self, ui: &mut egui::Ui, error_lines: &[usize], line_height: f32) {
         let theme = self.theme;
         let ctx = ui.ctx().clone();
+        let error_lines = error_lines.to_vec();
 
         let mut nav_up = false;
         let mut nav_down = false;
@@ -132,6 +144,26 @@ impl App {
 
                 let syn = theme.syntax_colors(&ctx);
 
+                let mut line_starts = vec![0usize];
+                for (i, c) in text.char_indices() {
+                    if c == '\n' {
+                        line_starts.push(i + 1);
+                    }
+                }
+
+                let line_of = |pos: usize| -> usize {
+                    match line_starts.binary_search(&pos) {
+                        Ok(i) => i + 1,
+                        Err(i) => i,
+                    }
+                };
+
+                let err_bg = if ctx.global_style().visuals.dark_mode {
+                    Color32::from_rgb(90, 50, 55)
+                } else {
+                    Color32::from_rgb(255, 200, 200)
+                };
+
                 let job = egui::text::LayoutJob {
                     text: text.into(),
                     sections: tokens
@@ -146,12 +178,19 @@ impl App {
                                 lexer::TokenType::Comment => syn.comment,
                                 lexer::TokenType::Text => syn.text,
                             };
+                            let line = line_of(token.start);
+                            let bg = if error_lines.contains(&line) {
+                                err_bg
+                            } else {
+                                Color32::TRANSPARENT
+                            };
                             egui::text::LayoutSection {
                                 leading_space: 0.0,
                                 byte_range: token.start..token.end,
                                 format: egui::text::TextFormat {
                                     font_id: FontId::monospace(14.0),
                                     color,
+                                    background: bg,
                                     ..Default::default()
                                 },
                             }
@@ -191,7 +230,8 @@ impl App {
         }
 
         self.completion_visible = false;
-        if response.has_focus() && cursor_pos > 0 {
+        if response.has_focus() && cursor_pos > 0 && (!self.completion_block_trigger || changed) {
+            self.completion_block_trigger = false;
             let text = &self.active_tab().buffer.text;
             let cursor = cursor_pos.min(text.len());
             let before = &text[..cursor];
@@ -203,11 +243,21 @@ impl App {
                 {
                     let matches = completions::find_completions(partial);
                     if !matches.is_empty() {
-                        self.completion_visible = true;
-                        self.completion_matches =
+                        let new_matches: Vec<String> =
                             matches.into_iter().map(|s| s.to_string()).collect();
+                        let prefix = partial.to_string();
+                        let prefix_changed = prefix != self.completion_prefix;
+                        self.completion_visible = true;
+                        self.completion_matches = new_matches;
                         self.completion_byte_range = Some((bslash, cursor));
-                        self.completion_selected = 0;
+                        self.completion_prefix = prefix;
+                        if prefix_changed {
+                            self.completion_selected = 0;
+                        } else {
+                            self.completion_selected = self
+                                .completion_selected
+                                .min(self.completion_matches.len() - 1);
+                        }
                     }
                 }
             }
@@ -215,6 +265,7 @@ impl App {
 
         if nav_escape {
             self.completion_visible = false;
+            self.completion_prefix.clear();
         }
         if nav_up {
             if self.completion_selected == 0 {
@@ -229,7 +280,6 @@ impl App {
         }
 
         if self.completion_visible {
-            let line_height = 16.0;
             let (cursor_line, _) = self.active_tab().buffer.cursor_line_col();
             let popup_pos = egui::pos2(
                 response.rect.left() + 4.0,
@@ -304,6 +354,8 @@ impl App {
                     }
                 }
                 self.completion_visible = false;
+                self.completion_prefix.clear();
+                self.completion_block_trigger = true;
             }
         }
     }

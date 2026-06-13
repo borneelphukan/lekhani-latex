@@ -134,7 +134,6 @@ impl Default for CompilerConfig {
             command: "pdflatex".into(),
             args: vec![
                 "-interaction=nonstopmode".into(),
-                "-halt-on-error".into(),
             ],
         }
     }

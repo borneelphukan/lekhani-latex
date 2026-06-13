@@ -6,8 +6,10 @@ mod preview_panel;
 mod editor;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
-use egui::{CentralPanel, Color32, Panel, ScrollArea};
+use egui::{CentralPanel, Color32, Panel};
+use regex::Regex;
 
 use crate::compiler::CompileEvent;
 use crate::preview::PreviewEvent;
@@ -23,6 +25,12 @@ pub struct App {
     completion_matches: Vec<String>,
     completion_byte_range: Option<(usize, usize)>,
     completion_selected: usize,
+    completion_prefix: String,
+    completion_block_trigger: bool,
+    show_outputs: bool,
+    show_outputs_requested: bool,
+    system_dark: bool,
+    last_auto_compile: Option<Instant>,
 }
 
 enum FileDialogAction {
@@ -44,6 +52,12 @@ impl App {
             completion_matches: Vec::new(),
             completion_byte_range: None,
             completion_selected: 0,
+            completion_prefix: String::new(),
+            completion_block_trigger: false,
+            show_outputs: false,
+            show_outputs_requested: false,
+            system_dark: cc.egui_ctx.global_style().visuals.dark_mode,
+            last_auto_compile: None,
         };
 
         let mut args = std::env::args().skip(1);
@@ -80,17 +94,13 @@ impl App {
     }
 
     fn apply_theme(&self, ctx: egui::Context) {
-        let mut style = (*ctx.global_style()).clone();
         let resolved = match self.theme {
             Theme::System => {
-                if style.visuals.dark_mode {
-                    Theme::Dark
-                } else {
-                    Theme::Light
-                }
+                if self.system_dark { Theme::Dark } else { Theme::Light }
             }
             theme => theme,
         };
+        let mut style = (*ctx.global_style()).clone();
         match resolved {
             Theme::Dark => {
                 style.visuals = egui::Visuals::dark();
@@ -104,22 +114,95 @@ impl App {
     }
 
     fn poll_events(&mut self) {
-        for tab in &mut self.tabs {
+        for i in 0..self.tabs.len() {
+            let tab = &mut self.tabs[i];
             while let Some(event) = tab.compiler.poll() {
                 match event {
                     CompileEvent::Started => {
                         tab.status_message = "Compiling…".into();
+                        tab.compile_start_time = Some(std::time::Instant::now());
+                    }
+                    CompileEvent::Warnings(warnings) => {
+                        for w in &warnings {
+                            tab.output_log.push((w.clone(), Color32::from_rgb(200, 180, 40)));
+                        }
                     }
                     CompileEvent::Success(pdf_path) => {
+                        let duration = tab
+                            .compile_start_time
+                            .take()
+                            .map(|t| t.elapsed())
+                            .unwrap_or_default();
                         tab.status_message = "Compilation succeeded".into();
                         tab.show_preview = true;
+                        tab.error_lines.clear();
+                        tab.error_message = None;
+                        let dur_str = if duration.as_secs() > 0 {
+                            format!("{}.{:02}s", duration.as_secs(), duration.subsec_millis() / 10)
+                        } else {
+                            format!("{}ms", duration.subsec_millis())
+                        };
+                        tab.output_log.clear();
+                        tab.output_log.push((
+                            format!("\u{221A} Compilation succeeded in {}", dur_str),
+                            Color32::from_rgb(60, 180, 75),
+                        ));
                         tab.preview.page = 0;
                         tab.preview.num_pages = None;
                         tab.preview.render_pdf(&pdf_path, 0);
+                        self.show_outputs_requested = true;
                     }
                     CompileEvent::Failure(errors) => {
+                        tab.compile_start_time.take();
                         tab.status_message = "Compilation failed".into();
                         tab.error_message = Some(errors.join("\n"));
+                        tab.output_log.clear();
+                        let re_line = Regex::new(r"l\.(\d+)").unwrap();
+                        let mut all_error_lines: Vec<usize> = Vec::new();
+                        let mut j = 0;
+                        while j < errors.len() {
+                            let entry = &errors[j];
+                            if entry.starts_with("! ") {
+                                let err_code = entry[2..].trim().to_string();
+                                let mut line_num = 0;
+                                let mut context = String::new();
+                                if j + 1 < errors.len() && errors[j + 1].starts_with("l.") {
+                                    let line_ref = &errors[j + 1];
+                                    if let Some(cap) = re_line.captures(line_ref) {
+                                        if let Ok(n) = cap[1].parse() {
+                                            line_num = n;
+                                            all_error_lines.push(n);
+                                        }
+                                    }
+                                    context = line_ref.find(' ')
+                                        .map(|p| line_ref[p..].trim())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    j += 1;
+                                }
+                                let source_line = tab.buffer.text.lines().nth(
+                                    line_num.checked_sub(1).unwrap_or(0),
+                                ).unwrap_or("").to_string();
+                                let error_syntax = if !source_line.is_empty() {
+                                    source_line
+                                } else if !context.is_empty() {
+                                    context.clone()
+                                } else {
+                                    String::new()
+                                };
+                                let display = if !error_syntax.is_empty() {
+                                    format!("\u{00D7} Error[line {}]: {} {}", line_num, error_syntax, err_code)
+                                } else {
+                                    format!("\u{00D7} Error: {}", err_code)
+                                };
+                                tab.output_log.push((display, Color32::from_rgb(220, 60, 60)));
+                            }
+                            j += 1;
+                        }
+                        all_error_lines.sort();
+                        all_error_lines.dedup();
+                        tab.error_lines = all_error_lines;
+                        self.show_outputs_requested = true;
                     }
                 }
             }
@@ -177,7 +260,30 @@ impl eframe::App for App {
         }
 
         self.poll_events();
+        if self.show_outputs_requested {
+            self.show_outputs = true;
+            self.show_outputs_requested = false;
+        }
         self.update_preview_textures(ui.ctx());
+
+        let now = Instant::now();
+        if self.auto_compile && !self.tabs.is_empty() {
+            if self.last_auto_compile.map_or(true, |t| now.duration_since(t).as_secs_f32() >= 1.5) {
+                let tab = self.active_tab_mut();
+                if tab.buffer.path().is_some() && tab.buffer.dirty {
+                    if tab.buffer.save().is_ok() {
+                        if let Some(p) = tab.buffer.path().map(|p| p.to_path_buf()) {
+                            tab.compiler.compile(&p);
+                        }
+                    }
+                }
+                self.last_auto_compile = Some(now);
+            }
+        }
+
+        Panel::top("menu_bar").show_inside(ui, |ui| {
+            self.menu_bar(ui);
+        });
 
         if !self.tabs.is_empty() {
             Panel::top("tab_bar")
@@ -186,10 +292,6 @@ impl eframe::App for App {
                     self.tab_bar(ui);
                 });
         }
-
-        Panel::top("menu_bar").show_inside(ui, |ui| {
-            self.menu_bar(ui);
-        });
 
         Panel::top("toolbar")
             .min_size(32.0)
@@ -202,6 +304,24 @@ impl eframe::App for App {
             .show_inside(ui, |ui| {
                 self.status_bar(ui);
             });
+
+        if !self.tabs.is_empty() {
+            Panel::bottom("output_bar")
+                .min_size(24.0)
+                .show_inside(ui, |ui| {
+                    self.output_bar(ui);
+                });
+        }
+
+        if self.show_outputs && !self.tabs.is_empty() {
+            Panel::bottom("output_panel")
+                .resizable(true)
+                .default_size(150.0)
+                .min_size(60.0)
+                .show_inside(ui, |ui| {
+                    self.output_panel(ui);
+                });
+        }
 
         CentralPanel::default().show_inside(ui, |ui| {
             if self.tabs.is_empty() {
@@ -238,28 +358,6 @@ impl eframe::App for App {
             self.editor_area(ui);
         });
 
-        if !self.tabs.is_empty() {
-            let err = self.active_tab_mut().error_message.take();
-            if let Some(msg) = err {
-                let mut keep = true;
-                egui::Window::new("Error")
-                    .collapsible(false)
-                    .resizable(true)
-                    .show(ui.ctx(), |ui| {
-                        ScrollArea::vertical()
-                            .max_height(300.0)
-                            .show(ui, |ui| {
-                                ui.label(&msg);
-                            });
-                        if ui.button("Close").clicked() {
-                            keep = false;
-                        }
-                    });
-                if keep {
-                    self.active_tab_mut().error_message = Some(msg);
-                }
-            }
-        }
     }
 
     fn on_exit(&mut self) {
@@ -303,7 +401,18 @@ impl App {
                                         .sense(egui::Sense::click()),
                                 );
                                 if close_resp.clicked() {
-                                    remove_tab = Some(i);
+                                    if !self.tabs[i].buffer.dirty
+                                        || rfd::MessageDialog::new()
+                                            .set_title("Unsaved Changes")
+                                            .set_description(
+                                                "You have unsaved changes. Close this workspace?",
+                                            )
+                                            .set_buttons(rfd::MessageButtons::YesNo)
+                                            .show()
+                                            == rfd::MessageDialogResult::Yes
+                                    {
+                                        remove_tab = Some(i);
+                                    }
                                 }
                             }
                         });
@@ -315,6 +424,47 @@ impl App {
                     self.active_tab = self.active_tab.min(self.tabs.len() - 1);
                 }
             }
+        });
+    }
+
+    fn output_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let is_open = self.show_outputs;
+            let label = if is_open { "▼ Outputs" } else { "▶ Outputs" };
+            if ui.button(label).clicked() {
+                self.show_outputs = !self.show_outputs;
+            }
+        });
+    }
+
+    fn output_panel(&mut self, ui: &mut egui::Ui) {
+        let log = self.active_tab().output_log.clone();
+        let text_color = ui.style().visuals.text_color();
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("Output").strong(),
+            );
+            ui.separator();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    if log.is_empty() {
+                        ui.colored_label(
+                            egui::Color32::GRAY,
+                            "No output to display.",
+                        );
+                    } else {
+                        for (text, color) in &log {
+                            let c = if *color == egui::Color32::WHITE {
+                                text_color
+                            } else {
+                                *color
+                            };
+                            ui.colored_label(c, text);
+                        }
+                    }
+                });
         });
     }
 }

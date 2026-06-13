@@ -1,4 +1,7 @@
 use std::path::Path;
+use std::time::Instant;
+
+use egui::Color32;
 
 use crate::buffer::EditorBuffer;
 use crate::compiler::CompilerBridge;
@@ -14,7 +17,10 @@ pub struct Tab {
     pub preview_texture: Option<egui::TextureHandle>,
     pub status_message: String,
     pub error_message: Option<String>,
+    pub error_lines: Vec<usize>,
+    pub output_log: Vec<(String, Color32)>,
     pub scroll_offset: egui::Vec2,
+    pub compile_start_time: Option<Instant>,
 }
 
 impl Tab {
@@ -28,7 +34,10 @@ impl Tab {
             preview_texture: None,
             status_message,
             error_message: None,
+            error_lines: Vec::new(),
+            output_log: Vec::new(),
             scroll_offset: egui::Vec2::ZERO,
+            compile_start_time: None,
         }
     }
 

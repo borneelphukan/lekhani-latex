@@ -10,6 +10,7 @@ use crate::types::CompilerConfig;
 #[derive(Debug, Clone)]
 pub enum CompileEvent {
     Started,
+    Warnings(Vec<String>),
     Success(PathBuf),
     Failure(Vec<String>),
 }
@@ -120,6 +121,13 @@ impl CompilerBridge {
 
             match cmd.output() {
                 Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let warnings = extract_warnings(&stderr, &stdout, &log_path);
+                    if !warnings.is_empty() {
+                        let _ = tx.send(CompileEvent::Warnings(warnings));
+                    }
+
                     let success = output.status.success();
                     // Also check the log for the presence of fatal errors
                     let log_has_fatal = read_log_fatal(&log_path);
@@ -133,8 +141,6 @@ impl CompilerBridge {
                             ]));
                         }
                     } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        let stdout = String::from_utf8_lossy(&output.stdout);
                         let errors = extract_errors(&stderr, &stdout, &log_path);
                         let _ = tx.send(CompileEvent::Failure(errors));
                     }
@@ -161,6 +167,7 @@ impl CompilerBridge {
             Ok(event) => {
                 self.status = match &event {
                     CompileEvent::Started => CompileStatus::Running,
+                    CompileEvent::Warnings(_) => return Some(event),
                     CompileEvent::Success(_) => CompileStatus::Success,
                     CompileEvent::Failure(_) => CompileStatus::Failed,
                 };
@@ -197,6 +204,36 @@ fn read_log_fatal(log_path: &Path) -> bool {
     } else {
         false
     }
+}
+
+fn extract_warnings(stderr: &str, stdout: &str, log_path: &Path) -> Vec<String> {
+    let combined = format!("{}\n{}", stderr, stdout);
+    let mut warnings: Vec<String> = combined
+        .lines()
+        .filter(|l| {
+            l.contains("Warning:")
+                || l.contains("Overfull")
+                || l.contains("Underfull")
+        })
+        .map(|l| l.trim().to_string())
+        .collect();
+
+    // Also check the log file for warnings
+    if let Ok(log) = std::fs::read_to_string(log_path) {
+        for line in log.lines() {
+            let trimmed = line.trim();
+            if (trimmed.contains("Warning:")
+                || trimmed.contains("Overfull")
+                || trimmed.contains("Underfull"))
+                && !warnings.contains(&trimmed.to_string())
+            {
+                warnings.push(trimmed.to_string());
+            }
+        }
+    }
+
+    warnings.truncate(10);
+    warnings
 }
 
 fn extract_errors(stderr: &str, stdout: &str, log_path: &Path) -> Vec<String> {
