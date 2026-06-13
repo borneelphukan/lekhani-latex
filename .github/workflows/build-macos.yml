@@ -16,12 +16,25 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin, aarch64-apple-darwin
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Build for x86_64 (Intel)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Build for aarch64 (Apple Silicon)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          mkdir -p target/universal
+          lipo -create \
+            target/x86_64-apple-darwin/release/latex-writer \
+            target/aarch64-apple-darwin/release/latex-writer \
+            -output target/universal/latex-writer
 
       - name: Generate app icon
         run: |
@@ -37,25 +50,13 @@ jobs:
           rm -rf "$APP_DIR"
           mkdir -p "$APP_DIR/Contents/MacOS"
           mkdir -p "$APP_DIR/Contents/Resources"
-          cp target/release/$APP_NAME "$APP_DIR/Contents/MacOS/"
+          cp target/universal/$APP_NAME "$APP_DIR/Contents/MacOS/"
           chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
           cp assets/Info.plist "$APP_DIR/Contents/"
           if [ -f assets/icon.icns ]; then
             cp assets/icon.icns "$APP_DIR/Contents/Resources/"
           fi
           plutil -lint "$APP_DIR/Contents/Info.plist"
-
-      - name: Sign the app bundle
-        run: |
-          APP_NAME="latex-writer"
-          APP_DIR="$APP_NAME.app"
-          codesign --force --sign - "$APP_DIR/Contents/MacOS/$APP_NAME"
-          codesign --force --sign - "$APP_DIR"
-
-      - name: Verify code signature
-        run: |
-          codesign -vvv --deep "latex-writer.app" 2>&1
-          spctl -a -t exec -vvv "latex-writer.app" 2>&1 || echo "spctl assessment note (expected for ad-hoc signed apps)"
 
       - name: Create .dmg
         run: |
