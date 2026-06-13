@@ -6,6 +6,214 @@ use crate::lexer;
 use crate::types::Theme;
 
 impl App {
+    fn is_article_document(&self) -> bool {
+        if self.tabs.is_empty() {
+            return false;
+        }
+        let text = &self.active_tab().buffer.text;
+        let re = regex::Regex::new(r"\\documentclass(?:\[.*?\])?\{(\w+)\}").unwrap();
+        if let Some(caps) = re.captures(text) {
+            caps.get(1).unwrap().as_str() == "article"
+        } else {
+            true
+        }
+    }
+
+    fn detect_current_heading(&self) -> Option<&'static str> {
+        if self.tabs.is_empty() {
+            return None;
+        }
+        let tab = self.active_tab();
+        let text = &tab.buffer.text;
+        let cursor = tab.buffer.cursor.min(text.len());
+
+        let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let line = text[line_start..line_end].trim();
+
+        let re = regex::Regex::new(r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{").unwrap();
+        re.captures(line).and_then(|caps| match caps.get(1).unwrap().as_str() {
+            "part" => Some("part"),
+            "chapter" => Some("chapter"),
+            "section" => Some("section"),
+            "subsection" => Some("subsection"),
+            "subsubsection" => Some("subsubsection"),
+            "paragraph" => Some("paragraph"),
+            "subparagraph" => Some("subparagraph"),
+            _ => None,
+        })
+    }
+
+    fn display_heading_label(heading: Option<&str>) -> String {
+        match heading {
+            None => "Paragraph".to_string(),
+            Some("subsection") => "Subsection".to_string(),
+            Some("subsubsection") => "Sub-subsection".to_string(),
+            Some("subparagraph") => "Subparagraph".to_string(),
+            Some(s) => {
+                let mut c = s.chars();
+                c.next().unwrap().to_uppercase().to_string() + c.as_str()
+            }
+        }
+    }
+
+    fn apply_heading(&mut self, heading: Option<&str>, numbered: bool) {
+        let tab = self.active_tab_mut();
+        let text = &mut tab.buffer.text;
+        let cursor = tab.buffer.cursor.min(text.len());
+
+        let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let line = text[line_start..line_end].to_string();
+        let trimmed = line.trim();
+
+        let re = regex::Regex::new(r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{([^}]*)\}").unwrap();
+        let content = if let Some(caps) = re.captures(trimmed) {
+            caps.get(3).unwrap().as_str().trim().to_string()
+        } else {
+            trimmed.to_string()
+        };
+
+        let indent = &line[..line.len().saturating_sub(trimmed.len())];
+
+        match heading {
+            None => {
+                let new_line = format!("{}{}", indent, content);
+                text.replace_range(line_start..line_end, &new_line);
+                tab.buffer.cursor = line_start + new_line.len();
+            }
+            Some(cmd) => {
+                let star = if numbered { "" } else { "*" };
+                let new_line = format!("{}\\{}{}{{{}}}", indent, cmd, star, content);
+                text.replace_range(line_start..line_end, &new_line);
+                tab.buffer.cursor = line_start + new_line.len() - 1;
+            }
+        }
+        tab.buffer.sync_after_edit();
+    }
+
+    fn toggle_heading_starred(&mut self) {
+        let want_star = !self.heading_numbered;
+        let tab = self.active_tab_mut();
+        let text = &mut tab.buffer.text;
+        let cursor = tab.buffer.cursor.min(text.len());
+
+        let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let old_len = line_end - line_start;
+        let line = text[line_start..line_end].to_string();
+
+        let re = regex::Regex::new(r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{").unwrap();
+        if re.is_match(&line) {
+            let new_line = if want_star {
+                let add_re = regex::Regex::new(r"(\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph))(\{)").unwrap();
+                add_re.replace(&line, "${1}*${2}").to_string()
+            } else {
+                let remove_re = regex::Regex::new(r"(\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph))\*(\{)").unwrap();
+                remove_re.replace(&line, "${1}${2}").to_string()
+            };
+            if new_line != line {
+                let delta = new_line.len() as isize - old_len as isize;
+                text.replace_range(line_start..line_end, &new_line);
+                if cursor > line_start {
+                    let new_cursor = (cursor as isize + delta).max(line_start as isize) as usize;
+                    tab.buffer.cursor = new_cursor.min(text.len());
+                }
+                tab.buffer.sync_after_edit();
+            }
+        }
+    }
+
+    pub(super) fn formatting_toolbar(&mut self, ui: &mut egui::Ui) {
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        let is_article = self.is_article_document();
+        let current_heading = self.detect_current_heading();
+        let display_label = Self::display_heading_label(current_heading);
+
+        ui.horizontal(|ui| {
+            let btn_size = egui::vec2(28.0, 28.0);
+
+            if ui.add_sized(btn_size, egui::Button::new(
+                egui::RichText::new("B").size(14.0).strong(),
+            )).on_hover_text("Bold").clicked() {
+                let tab = self.active_tab_mut();
+                tab.buffer.insert_str("\\textbf{}");
+                tab.buffer.cursor -= 1;
+            }
+            if ui.add_sized(btn_size, egui::Button::new(
+                egui::RichText::new("I").size(14.0).strong(),
+            )).on_hover_text("Italic").clicked() {
+                let tab = self.active_tab_mut();
+                tab.buffer.insert_str("\\textit{}");
+                tab.buffer.cursor -= 1;
+            }
+            if ui.add_sized(btn_size, egui::Button::new(
+                egui::RichText::new("U").size(14.0).strong(),
+            )).on_hover_text("Underline").clicked() {
+                let tab = self.active_tab_mut();
+                tab.buffer.insert_str("\\underline{}");
+                tab.buffer.cursor -= 1;
+            }
+
+            ui.separator();
+
+            egui::ComboBox::from_id_salt("header_dropdown")
+                .selected_text(&display_label)
+                .width(140.0)
+                .show_ui(ui, |ui| {
+                    if ui.add(egui::Button::selectable(current_heading.is_none(), "Paragraph")).clicked() {
+                        self.heading_numbered = true;
+                        self.apply_heading(None, true);
+                        ui.close();
+                    }
+                    ui.separator();
+
+                    let items: [(&str, &str, f32); 7] = [
+                        ("Part", "part", 16.0),
+                        ("Chapter", "chapter", 15.0),
+                        ("Section", "section", 14.0),
+                        ("Subsection", "subsection", 13.5),
+                        ("Sub-subsection", "subsubsection", 13.0),
+                        ("Paragraph Header", "paragraph", 12.5),
+                        ("Subparagraph", "subparagraph", 12.0),
+                    ];
+
+                    for &(label, cmd, size) in &items {
+                        let is_selected = current_heading == Some(cmd);
+                        let enabled = !(cmd == "chapter" && is_article);
+                        let text = egui::RichText::new(label).size(size);
+                        if ui.add_enabled(enabled, egui::Button::selectable(is_selected, text)).clicked() {
+                            self.apply_heading(Some(cmd), self.heading_numbered);
+                            ui.close();
+                        }
+                    }
+                });
+
+            if ui.checkbox(&mut self.heading_numbered, "Numbered").changed() {
+                self.toggle_heading_starred();
+            }
+
+            ui.separator();
+            let can_undo = self.active_tab().buffer.can_undo();
+            if ui.add_enabled(can_undo, egui::Button::new("Undo"))
+                .on_hover_text("Ctrl+Z")
+                .clicked()
+            {
+                self.active_tab_mut().buffer.undo();
+            }
+            let can_redo = self.active_tab().buffer.can_redo();
+            if ui.add_enabled(can_redo, egui::Button::new("Redo"))
+                .on_hover_text("Ctrl+Y")
+                .clicked()
+            {
+                self.active_tab_mut().buffer.redo();
+            }
+        });
+    }
+
     pub(super) fn editor_area(&mut self, ui: &mut egui::Ui) {
         if self.tabs.is_empty() {
             return;

@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::app::App;
 use crate::app::tab::Tab;
 use crate::buffer::EditorBuffer;
-use crate::types::Theme;
-
 fn project_tex_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new("."));
     let file_name = path
@@ -19,7 +17,17 @@ fn project_tex_path(path: &Path) -> PathBuf {
 
 impl App {
     pub(super) fn menu_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.style_mut()
+            .text_styles
+            .insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
+        ui.style_mut()
+            .text_styles
+            .insert(egui::TextStyle::Body, egui::FontId::proportional(13.0));
+        ui.style_mut().spacing.button_padding = egui::vec2(16.0, 10.0);
+        ui.style_mut().spacing.item_spacing = egui::vec2(4.0, 0.0);
+
+        ui.add_space(4.0);
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("New Document").clicked() {
                     ui.close();
@@ -51,27 +59,6 @@ impl App {
             });
 
             let has_tabs = !self.tabs.is_empty();
-            if has_tabs {
-                ui.menu_button("Edit", |ui| {
-                    if ui.button("Undo").clicked() {
-                        ui.close();
-                        self.active_tab_mut().buffer.undo();
-                    }
-                    if ui.button("Redo").clicked() {
-                        ui.close();
-                        self.active_tab_mut().buffer.redo();
-                    }
-                });
-            } else {
-                ui.menu_button("Edit", |_ui| {});
-            }
-
-            if has_tabs {
-                ui.menu_button("Build", |_ui| {});
-            } else {
-                ui.menu_button("Build", |_ui| {});
-            }
-
             ui.menu_button("View", |ui| {
                 if ui.add_enabled(has_tabs, egui::Button::new("Toggle Preview")).clicked() {
                     ui.close();
@@ -83,34 +70,29 @@ impl App {
                         "Preview hidden".into()
                     };
                 }
-                ui.menu_button("Theme", |ui| {
-                    if ui
-                        .selectable_value(&mut self.theme, Theme::System, "System")
-                        .clicked()
-                    {
-                        ui.close();
-                        self.apply_theme(ui.ctx().clone());
-                        ui.ctx().request_repaint();
-                    }
-                    if ui
-                        .selectable_value(&mut self.theme, Theme::Light, "Light")
-                        .clicked()
-                    {
-                        ui.close();
-                        self.apply_theme(ui.ctx().clone());
-                        ui.ctx().request_repaint();
-                    }
-                    if ui
-                        .selectable_value(&mut self.theme, Theme::Dark, "Dark")
-                        .clicked()
-                    {
-                        ui.close();
-                        self.apply_theme(ui.ctx().clone());
-                        ui.ctx().request_repaint();
-                    }
-                });
+                let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+                if ui.add(egui::Button::selectable(fs, "\u{2386} Fullscreen"))
+                    .on_hover_text("F12")
+                    .clicked()
+                {
+                    ui.close();
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
+                }
+            });
+
+            ui.menu_button("Help", |ui| {
+                ui.set_min_width(220.0);
+                if ui.button("Check for Updates").clicked() {
+                    self.check_for_updates(ui.ctx().clone());
+                    ui.close();
+                }
+                if ui.button("About").clicked() {
+                    self.about_open = true;
+                    ui.close();
+                }
             });
         });
+        ui.add_space(4.0);
     }
 
     pub(super) fn trigger_compile(&mut self) {
@@ -120,9 +102,9 @@ impl App {
         let tab = self.active_tab_mut();
         let path = tab.buffer.path().map(|p| p.to_path_buf());
         if let Some(ref path) = path {
-            if let Err(e) = tab.buffer.save() {
+            if let Err(e) = std::fs::write(path, &tab.buffer.text) {
                 tab.error_message =
-                    Some(format!("Failed to save before compile: {}", e));
+                    Some(format!("Failed to write file for compile: {}", e));
                 return;
             }
             tab.compiler.compile(path);

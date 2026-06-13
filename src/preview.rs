@@ -103,7 +103,7 @@ impl PreviewViewer {
         let path = pdf_path.to_path_buf();
         let temp_dir = std::env::temp_dir();
         let pid = std::process::id();
-        let output_stem = format!("latex_writer_preview_{}_{}", pid, page);
+        let output_stem = format!("lekhani_preview_{}_{}", pid, page);
         let output_path = temp_dir.join(format!("{}.png", output_stem));
         let dpi = 300u32;
         let tool = renderer;

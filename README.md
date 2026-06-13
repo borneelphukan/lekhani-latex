@@ -1,4 +1,4 @@
-# LaTeX Writer
+# Lekhani Latex
 
 A cross-platform desktop LaTeX editor with live PDF preview, syntax highlighting, and autocompletion. Built with [egui](https://github.com/emilk/egui) (immediate-mode GUI) and [eframe](https://github.com/emilk/egui/tree/master/crates/eframe).
 
@@ -27,7 +27,7 @@ A cross-platform desktop LaTeX editor with live PDF preview, syntax highlighting
 ```bash
 # Clone and build
 git clone <repo-url>
-cd latex-writer
+cd lekhani-latex
 cargo run --release
 ```
 
@@ -76,5 +76,4 @@ src/
 | Ctrl+Scroll / Pinch | Zoom the PDF preview in/out |
 | − / + buttons | Zoom the PDF preview |
 | ◀ / ▶ buttons | Navigate preview pages |
-| View > Toggle Theme | Switch between dark and light themes |
 | View > Toggle Preview | Show/hide the preview panel |

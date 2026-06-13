@@ -26,5 +26,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: latex-writer-windows
-          path: target/release/latex-writer.exe
+          name: lekhani-latex-windows
+          path: target/release/lekhani-latex.exe

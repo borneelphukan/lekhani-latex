@@ -86,6 +86,14 @@ impl EditorBuffer {
         }
     }
 
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
     pub(crate) fn push_undo(&mut self, token: EditToken) {
         self.undo_stack.push(token);
         if self.undo_stack.len() > super::MAX_UNDO {

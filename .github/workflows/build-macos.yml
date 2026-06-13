@@ -32,26 +32,26 @@ jobs:
         run: |
           mkdir -p target/universal
           lipo -create \
-            target/x86_64-apple-darwin/release/latex-writer \
-            target/aarch64-apple-darwin/release/latex-writer \
-            -output target/universal/latex-writer
+            target/x86_64-apple-darwin/release/lekhani-latex \
+            target/aarch64-apple-darwin/release/lekhani-latex \
+            -output target/universal/lekhani-latex
 
       - name: Generate app icon
         run: |
-          ICONSET="latex-writer.iconset"
+          ICONSET="lekhani-latex.iconset"
           mkdir -p "$ICONSET"
           python3 assets/gen_icon.py
           iconutil -c icns "$ICONSET" -o assets/icon.icns 2>&1 || echo "Icon generation failed, continuing without icon"
 
       - name: Create .app bundle
         run: |
-          APP_NAME="latex-writer"
+          APP_NAME="Lekhani Latex"
           APP_DIR="$APP_NAME.app"
           rm -rf "$APP_DIR"
           mkdir -p "$APP_DIR/Contents/MacOS"
           mkdir -p "$APP_DIR/Contents/Resources"
-          cp target/universal/$APP_NAME "$APP_DIR/Contents/MacOS/"
-          chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
+          cp target/universal/lekhani-latex "$APP_DIR/Contents/MacOS/"
+          chmod +x "$APP_DIR/Contents/MacOS/lekhani-latex"
           cp assets/Info.plist "$APP_DIR/Contents/"
           if [ -f assets/icon.icns ]; then
             cp assets/icon.icns "$APP_DIR/Contents/Resources/"
@@ -60,8 +60,8 @@ jobs:
 
       - name: Create .dmg
         run: |
-          APP_NAME="latex-writer"
-          DMG_NAME="${APP_NAME}-macos.dmg"
+          APP_NAME="Lekhani Latex"
+          DMG_NAME="lekhani-latex-macos.dmg"
           hdiutil create \
             -volname "$APP_NAME" \
             -srcfolder "$APP_NAME.app" \
@@ -71,5 +71,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: latex-writer-macos
-          path: latex-writer-macos.dmg
+          name: lekhani-latex-macos
+          path: lekhani-latex-macos.dmg
