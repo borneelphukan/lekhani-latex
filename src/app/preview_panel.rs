@@ -61,15 +61,11 @@ impl App {
             return;
         }
 
-        let show_error = self.active_tab().preview.render_error.is_some();
-        let err_text = self.active_tab().preview.render_error.clone();
-        let has_pdf_path = self.active_tab().preview.last_pdf_path.is_some();
         let tex = self.active_tab().preview_texture.clone();
         let image_size = self.active_tab().preview.image_size;
         let mut zoom = self.active_tab().preview.zoom;
         let page = self.active_tab().preview.page;
         let mut scroll_offset = self.active_tab().scroll_offset;
-        let mut open_externally = false;
 
         if tex.is_some() {
             let zoom_delta = ui.input(|i| i.zoom_delta());
@@ -79,19 +75,6 @@ impl App {
         }
 
         let inner = ui.vertical(|ui| {
-            if show_error {
-                if let Some(err) = &err_text {
-                    ui.colored_label(Color32::RED, err);
-                }
-                if has_pdf_path {
-                    ui.add_space(8.0);
-                    if ui.button("Open PDF Externally").clicked() {
-                        open_externally = true;
-                    }
-                }
-                return;
-            }
-
             if let Some(tex) = tex {
                 let img_size = tex.size_vec2();
 
@@ -147,9 +130,5 @@ impl App {
         self.active_tab_mut().scroll_offset = scroll_offset;
         self.active_tab_mut().preview.zoom = zoom;
         self.active_tab_mut().preview.page = page;
-
-        if open_externally {
-            self.active_tab_mut().preview.open_externally();
-        }
     }
 }

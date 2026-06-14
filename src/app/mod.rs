@@ -56,6 +56,7 @@ pub struct App {
     heading_numbered: bool,
     last_auto_compile: Option<Instant>,
     last_content_change: Option<Instant>,
+    tab_drag: Option<(usize, f32)>,
 }
 
 enum FileDialogAction {
@@ -89,6 +90,7 @@ impl App {
             heading_numbered: true,
             last_auto_compile: None,
             last_content_change: None,
+            tab_drag: None,
         };
 
         let mut args = std::env::args().skip(1);
@@ -546,6 +548,12 @@ impl eframe::App for App {
     }
 }
 
+fn tab_width_for(tabs: &[tab::Tab], i: usize, is_active: bool) -> f32 {
+    let title_w = (tabs[i].title.len() as f32) * 7.5 + 12.0;
+    let close_w = if is_active { 24.0 } else { 0.0 };
+    (title_w + close_w).max(40.0)
+}
+
 impl App {
     fn check_for_updates(&mut self, ctx: egui::Context) {
         self.update_state = UpdateState::Checking;
@@ -852,97 +860,174 @@ impl App {
 
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
         let mut remove_tab = None;
-        let mut switch_to = None;
         let tab_count = self.tabs.len();
+        let pointer_down = ui.ctx().input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+        let pointer_up = ui.ctx().input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+        let pointer_pos = ui.ctx().input(|i| i.pointer.interact_pos());
+        let press_origin = ui.ctx().input(|i| i.pointer.press_origin());
+
+        if pointer_up || !pointer_down {
+            if let Some((from_idx, _)) = self.tab_drag.take() {
+                if pointer_up {
+                    let mut to = tab_count.saturating_sub(1);
+                    if let Some(pos) = pointer_pos {
+                        let mut cx = ui.min_rect().left();
+                        for j in 0..tab_count {
+                            let w = tab_width_for(&self.tabs, j, j == self.active_tab);
+                            let center = cx + w / 2.0;
+                            if pos.x < center { to = j; break; }
+                            cx += w;
+                        }
+                    }
+                    let from = from_idx;
+                    if from != to && from < self.tabs.len() {
+                        let was_active = self.active_tab == from;
+                        let tab = self.tabs.remove(from);
+                        let insert_at = if to > from { to - 1 } else { to };
+                        self.tabs.insert(insert_at, tab);
+                        if was_active {
+                            self.active_tab = insert_at;
+                        } else if from < self.active_tab && insert_at >= self.active_tab {
+                            self.active_tab -= 1;
+                        } else if from > self.active_tab && insert_at <= self.active_tab {
+                            self.active_tab += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut drag_rects: Vec<egui::Rect> = Vec::new();
+        let mut current_x = ui.min_rect().left();
 
         ui.horizontal(|ui| {
             for i in 0..tab_count {
+                let is_dragging = self.tab_drag.map_or(false, |(idx, _)| idx == i);
                 let is_active = i == self.active_tab;
                 let title = if self.tabs[i].buffer.dirty {
                     format!("{} •", self.tabs[i].title)
                 } else {
                     self.tabs[i].title.clone()
                 };
+                let tw = tab_width_for(&self.tabs, i, is_active);
 
                 let is_dark = ui.visuals().dark_mode;
-                let fill = if is_active {
+                let fill = if is_dragging {
+                    Color32::TRANSPARENT
+                } else if is_active {
                     if is_dark { Color32::from_rgb(48, 50, 56) } else { Color32::from_rgb(225, 226, 232) }
                 } else {
                     if is_dark { Color32::from_rgb(35, 37, 42) } else { Color32::from_rgb(205, 206, 212) }
                 };
 
-                let title_w = (title.len() as f32) * 7.5 + 12.0;
-                let close_w = if is_active { 24.0 } else { 0.0 };
-                let total_w = (title_w + close_w).max(40.0);
-
-                let (tab_rect, response) = ui.allocate_exact_size(
-                    egui::vec2(total_w, 28.0),
-                    egui::Sense::click(),
+                let (tab_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(tw, 28.0),
+                    egui::Sense::hover(),
                 );
+                drag_rects.push(tab_rect);
+
+                if is_dragging {
+                    continue;
+                }
 
                 ui.painter().rect_filled(tab_rect, 0, fill);
 
-                let text_pos = egui::pos2(
-                    tab_rect.left() + 6.0,
-                    tab_rect.center().y,
-                );
-                ui.painter().text(
-                    text_pos,
-                    egui::Align2::LEFT_CENTER,
-                    &title,
-                    egui::FontId::proportional(14.0),
-                    ui.visuals().text_color(),
-                );
+                let prev_inactive = ui.style().visuals.widgets.inactive.bg_fill;
+                let prev_hovered = ui.style().visuals.widgets.hovered.bg_fill;
+                let prev_active = ui.style().visuals.widgets.active.bg_fill;
+                ui.style_mut().visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                ui.style_mut().visuals.widgets.hovered.bg_fill = Color32::from_white_alpha(25);
+                ui.style_mut().visuals.widgets.active.bg_fill = Color32::from_white_alpha(50);
 
-                if response.clicked() {
-                    // Determine if click was on the close button area
-                    let close_rect = egui::Rect::from_min_size(
-                        egui::pos2(tab_rect.right() - 22.0, tab_rect.top() + 5.0),
-                        egui::vec2(18.0, 18.0),
-                    );
-                    let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
-                    let on_close = pointer.map_or(false, |p| close_rect.contains(p));
-
-                    if on_close && is_active {
-                        if !self.tabs[i].buffer.dirty
-                            || rfd::MessageDialog::new()
-                                .set_title("Unsaved Changes")
-                                .set_description(
-                                    "You have unsaved changes. Close this workspace?",
-                                )
-                                .set_buttons(rfd::MessageButtons::YesNo)
-                                .show()
-                                == rfd::MessageDialogResult::Yes
-                        {
-                            remove_tab = Some(i);
-                        }
-                    } else {
-                        switch_to = Some(i);
+                let inner = tab_rect.shrink2(egui::vec2(6.0, 2.0));
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt(("tab", i))
+                        .max_rect(inner)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+                child_ui.horizontal(|ui| {
+                    ui.set_min_size(egui::vec2(40.0, 26.0));
+                    let resp = ui.add(egui::Button::new(&title));
+                    if resp.clicked() {
+                        self.active_tab = i;
                     }
-                }
+                    if is_active {
+                        let close_resp = ui.add_sized(
+                            egui::vec2(18.0, 18.0),
+                            egui::Button::new("×"),
+                        );
+                        if close_resp.clicked() {
+                            if !self.tabs[i].buffer.dirty
+                                || rfd::MessageDialog::new()
+                                    .set_title("Unsaved Changes")
+                                    .set_description(
+                                        "You have unsaved changes. Close this workspace?",
+                                    )
+                                    .set_buttons(rfd::MessageButtons::YesNo)
+                                    .show()
+                                    == rfd::MessageDialogResult::Yes
+                            {
+                                remove_tab = Some(i);
+                            }
+                        }
+                    }
+                });
 
-                if is_active {
-                    let close_rect = egui::Rect::from_min_size(
-                        egui::pos2(tab_rect.right() - 22.0, tab_rect.top() + 5.0),
-                        egui::vec2(18.0, 18.0),
-                    );
-                    let mut child_ui = ui.new_child(
-                        egui::UiBuilder::new()
-                            .id_salt(("close", i))
-                            .max_rect(close_rect)
-                            .layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)),
-                    );
-                    child_ui.style_mut().visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
-                    child_ui.style_mut().visuals.widgets.hovered.bg_fill = Color32::from_white_alpha(25);
-                    child_ui.style_mut().visuals.widgets.active.bg_fill = Color32::from_white_alpha(50);
-                    child_ui.add_sized(egui::vec2(18.0, 18.0), egui::Button::new("×"));
-                }
+                ui.style_mut().visuals.widgets.inactive.bg_fill = prev_inactive;
+                ui.style_mut().visuals.widgets.hovered.bg_fill = prev_hovered;
+                ui.style_mut().visuals.widgets.active.bg_fill = prev_active;
+
+                current_x += tw;
             }
         });
 
-        if let Some(i) = switch_to {
-            self.active_tab = i;
+        if self.tab_drag.is_none() && pointer_down && !pointer_up {
+            if let (Some(origin), Some(pos)) = (press_origin, pointer_pos) {
+                if (pos.x - origin.x).abs() > 6.0 {
+                    for (i, rect) in drag_rects.iter().enumerate() {
+                        if rect.contains(origin) {
+                            self.tab_drag = Some((i, rect.left()));
+                            break;
+                        }
+                    }
+                }
+            }
         }
+
+        if let Some((drag_idx, _)) = self.tab_drag {
+            if let Some(pos) = pointer_pos {
+                let is_dark = ui.visuals().dark_mode;
+                let active_fill = if is_dark { Color32::from_rgb(48, 50, 56) } else { Color32::from_rgb(225, 226, 232) };
+                let w = tab_width_for(&self.tabs, drag_idx, drag_idx == self.active_tab);
+                let overlay_y = drag_rects.first().map_or(0.0, |r| r.top());
+
+                let overlay_pos = egui::pos2(pos.x - w / 2.0, overlay_y);
+                egui::Area::new(egui::Id::new("tab_drag_overlay"))
+                    .fixed_pos(overlay_pos)
+                    .order(egui::Order::Foreground)
+                    .show(ui.ctx(), |ui| {
+                        let title = if self.tabs[drag_idx].buffer.dirty {
+                            format!("{} •", self.tabs[drag_idx].title)
+                        } else {
+                            self.tabs[drag_idx].title.clone()
+                        };
+                        egui::Frame::NONE
+                            .fill(active_fill)
+                            .inner_margin(egui::Margin::symmetric(6, 2))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.set_min_size(egui::vec2(40.0, 26.0));
+                                    ui.add(egui::Label::new(&title));
+                                    if drag_idx == self.active_tab {
+                                        ui.add_sized(egui::vec2(18.0, 18.0), egui::Label::new("×"));
+                                    }
+                                });
+                            });
+                    });
+            }
+        }
+
         if let Some(idx) = remove_tab {
             self.tabs.remove(idx);
             if !self.tabs.is_empty() {
