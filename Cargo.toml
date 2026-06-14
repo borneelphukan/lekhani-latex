@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "A modern, easy-to-use LaTeX editor with live preview"
 
-[package.metadata.winres]
-OriginalFilename = "Lekhani Latex.exe"
-
 [dependencies]
 egui = "0.34"
 eframe = { version = "0.34", features = ["default"] }
@@ -16,3 +13,6 @@ thiserror = "2"
 rfd = "0.17"
 ureq = "3"
 dirs = "6"
+
+[build-dependencies]
+winres = "0.1.12"

@@ -132,6 +132,18 @@ impl App {
         let mut style = (*ctx.global_style()).clone();
         if is_dark {
             style.visuals = egui::Visuals::dark();
+            style.visuals.selection.bg_fill = egui::Color32::from_rgb(180, 180, 180);
+            style.visuals.panel_fill = egui::Color32::from_rgb(20, 20, 25);
+            style.visuals.window_fill = egui::Color32::from_rgb(25, 25, 30);
+            style.visuals.window_corner_radius = egui::CornerRadius::same(12);
+            style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
+            style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
+            style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
+            style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
+            style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
+            style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(35, 35, 40);
+            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(45, 45, 55);
+            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(65, 65, 80);
         } else {
             style.visuals = egui::Visuals::light();
         }
@@ -431,8 +443,14 @@ impl eframe::App for App {
                 .show(ui.ctx(), |ui| {
                     egui::Frame::NONE
                         .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180))
-                        .corner_radius(egui::CornerRadius::same(6))
+                        .corner_radius(egui::CornerRadius::same(8))
                         .inner_margin(egui::Margin::symmetric(16, 8))
+                        .shadow(egui::epaint::Shadow {
+                            offset: [0, 4],
+                            blur: 8,
+                            spread: 0,
+                            color: egui::Color32::from_black_alpha(80),
+                        })
                         .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new("Press Esc to exit fullscreen")
@@ -549,8 +567,8 @@ impl eframe::App for App {
 }
 
 fn tab_width_for(tabs: &[tab::Tab], i: usize, is_active: bool) -> f32 {
-    let title_w = (tabs[i].title.len() as f32) * 7.5 + 12.0;
-    let close_w = if is_active { 24.0 } else { 0.0 };
+    let title_w = (tabs[i].title.len() as f32) * 7.5 + 16.0;
+    let close_w = if is_active { 28.0 } else { 0.0 };
     (title_w + close_w).max(40.0)
 }
 
@@ -898,87 +916,108 @@ impl App {
         }
 
         let mut drag_rects: Vec<egui::Rect> = Vec::new();
-        let mut current_x = ui.min_rect().left();
 
-        ui.horizontal(|ui| {
-            for i in 0..tab_count {
-                let is_dragging = self.tab_drag.map_or(false, |(idx, _)| idx == i);
-                let is_active = i == self.active_tab;
-                let title = if self.tabs[i].buffer.dirty {
-                    format!("{} •", self.tabs[i].title)
-                } else {
-                    self.tabs[i].title.clone()
-                };
-                let tw = tab_width_for(&self.tabs, i, is_active);
+        ui.scope(|ui| {
+            let is_dark = ui.visuals().dark_mode;
 
-                let is_dark = ui.visuals().dark_mode;
-                let fill = if is_dragging {
-                    Color32::TRANSPARENT
-                } else if is_active {
-                    if is_dark { Color32::from_rgb(48, 50, 56) } else { Color32::from_rgb(225, 226, 232) }
-                } else {
-                    if is_dark { Color32::from_rgb(35, 37, 42) } else { Color32::from_rgb(205, 206, 212) }
-                };
+            if is_dark {
+                ui.style_mut().visuals.selection.bg_fill = Color32::from_rgb(38, 38, 38);
+                ui.style_mut().visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 45, 45);
+            } else {
+                ui.style_mut().visuals.selection.bg_fill =
+                    ui.style().visuals.widgets.inactive.weak_bg_fill;
+                ui.style_mut().visuals.widgets.hovered.bg_fill =
+                    ui.style().visuals.widgets.hovered.weak_bg_fill;
+            }
 
-                let (tab_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(tw, 28.0),
-                    egui::Sense::hover(),
-                );
-                drag_rects.push(tab_rect);
+            ui.style_mut().visuals.widgets.active.corner_radius = egui::CornerRadius::same(4);
+            ui.style_mut().visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(4);
+            ui.style_mut().visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(4);
+            ui.style_mut().visuals.widgets.noninteractive.corner_radius =
+                egui::CornerRadius::same(4);
 
-                if is_dragging {
-                    continue;
-                }
+            ui.style_mut()
+                .text_styles
+                .insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
+            ui.style_mut()
+                .text_styles
+                .insert(egui::TextStyle::Body, egui::FontId::proportional(13.0));
+            ui.style_mut().spacing.button_padding = egui::vec2(10.0, 6.0);
 
-                ui.painter().rect_filled(tab_rect, 0, fill);
+            if !self.tabs.is_empty() {
+                ui.horizontal(|ui| {
+                    for i in 0..tab_count {
+                        let is_dragging = self.tab_drag.map_or(false, |(idx, _)| idx == i);
+                        let is_active = i == self.active_tab;
+                        let title = if self.tabs[i].buffer.dirty {
+                            format!("{} •", self.tabs[i].title)
+                        } else {
+                            self.tabs[i].title.clone()
+                        };
 
-                let prev_inactive = ui.style().visuals.widgets.inactive.bg_fill;
-                let prev_hovered = ui.style().visuals.widgets.hovered.bg_fill;
-                let prev_active = ui.style().visuals.widgets.active.bg_fill;
-                ui.style_mut().visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
-                ui.style_mut().visuals.widgets.hovered.bg_fill = Color32::from_white_alpha(25);
-                ui.style_mut().visuals.widgets.active.bg_fill = Color32::from_white_alpha(50);
+                        if is_dragging {
+                            let tw = tab_width_for(&self.tabs, i, is_active);
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(tw, 28.0),
+                                egui::Sense::hover(),
+                            );
+                            drag_rects.push(rect);
+                            continue;
+                        }
 
-                let inner = tab_rect.shrink2(egui::vec2(6.0, 2.0));
-                let mut child_ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .id_salt(("tab", i))
-                        .max_rect(inner)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                );
-                child_ui.horizontal(|ui| {
-                    ui.set_min_size(egui::vec2(40.0, 26.0));
-                    let resp = ui.add(egui::Button::new(&title));
-                    if resp.clicked() {
-                        self.active_tab = i;
-                    }
-                    if is_active {
-                        let close_resp = ui.add_sized(
-                            egui::vec2(18.0, 18.0),
-                            egui::Button::new("×"),
-                        );
-                        if close_resp.clicked() {
-                            if !self.tabs[i].buffer.dirty
-                                || rfd::MessageDialog::new()
-                                    .set_title("Unsaved Changes")
-                                    .set_description(
-                                        "You have unsaved changes. Close this workspace?",
-                                    )
-                                    .set_buttons(rfd::MessageButtons::YesNo)
-                                    .show()
-                                    == rfd::MessageDialogResult::Yes
+                        let text = format!("{}      ", title);
+                        let text_color = if is_active && is_dark {
+                            Color32::from_rgb(220, 220, 220)
+                        } else {
+                            ui.visuals().text_color()
+                        };
+                        let text_style = if is_active {
+                            egui::RichText::new(&text)
+                                .color(text_color)
+                                .strong()
+                                .size(13.0)
+                        } else {
+                            egui::RichText::new(&text).color(text_color).size(13.0)
+                        };
+
+                        let resp = ui.selectable_label(is_active, text_style);
+                        if resp.clicked() {
+                            self.active_tab = i;
+                        }
+                        drag_rects.push(resp.rect);
+
+                        if is_active {
+                            let close_rect = egui::Rect::from_min_size(
+                                egui::pos2(
+                                    resp.rect.right() - 22.0,
+                                    resp.rect.top() + (resp.rect.height() - 16.0) / 2.0 - 2.0,
+                                ),
+                                egui::vec2(16.0, 16.0),
+                            );
+                            if ui
+                                .put(
+                                    close_rect,
+                                    egui::Button::new(egui::RichText::new("×").size(13.0))
+                                        .frame(false),
+                                )
+                                .clicked()
                             {
-                                remove_tab = Some(i);
+                                if !self.tabs[i].buffer.dirty
+                                    || rfd::MessageDialog::new()
+                                        .set_title("Unsaved Changes")
+                                        .set_description(
+                                            "You have unsaved changes. Close this workspace?",
+                                        )
+                                        .set_buttons(rfd::MessageButtons::YesNo)
+                                        .show()
+                                        == rfd::MessageDialogResult::Yes
+                                {
+                                    remove_tab = Some(i);
+                                }
                             }
                         }
                     }
                 });
-
-                ui.style_mut().visuals.widgets.inactive.bg_fill = prev_inactive;
-                ui.style_mut().visuals.widgets.hovered.bg_fill = prev_hovered;
-                ui.style_mut().visuals.widgets.active.bg_fill = prev_active;
-
-                current_x += tw;
             }
         });
 
@@ -998,7 +1037,7 @@ impl App {
         if let Some((drag_idx, _)) = self.tab_drag {
             if let Some(pos) = pointer_pos {
                 let is_dark = ui.visuals().dark_mode;
-                let active_fill = if is_dark { Color32::from_rgb(48, 50, 56) } else { Color32::from_rgb(225, 226, 232) };
+                let active_fill = if is_dark { Color32::from_rgb(38, 38, 38) } else { Color32::from_rgb(225, 226, 232) };
                 let w = tab_width_for(&self.tabs, drag_idx, drag_idx == self.active_tab);
                 let overlay_y = drag_rects.first().map_or(0.0, |r| r.top());
 
