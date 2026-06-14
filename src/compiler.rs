@@ -5,6 +5,11 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use crate::types::CompilerConfig;
 
 #[derive(Debug, Clone)]
@@ -118,6 +123,8 @@ impl CompilerBridge {
             cmd.args(&config.args)
                 .arg(&tex_arg)
                 .current_dir(output_dir);
+            #[cfg(windows)]
+            cmd.creation_flags(CREATE_NO_WINDOW);
 
             match cmd.output() {
                 Ok(output) => {

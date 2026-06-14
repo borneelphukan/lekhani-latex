@@ -3,6 +3,11 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use egui::ColorImage;
 
 #[derive(Debug)]
@@ -49,9 +54,11 @@ impl PreviewViewer {
     pub fn open_externally(&self) {
         if let Some(path) = &self.last_pdf_path {
             let path_str = path.to_string_lossy();
-            let _ = Command::new("cmd")
-                .args(["/c", "start", "", path_str.as_ref()])
-                .spawn();
+        let mut c = Command::new("cmd");
+        c.args(["/c", "start", "", path_str.as_ref()]);
+        #[cfg(windows)]
+        c.creation_flags(CREATE_NO_WINDOW);
+        let _ = c.spawn();
         }
     }
 
@@ -133,7 +140,11 @@ impl PreviewViewer {
             "gs",
             "pdftoppm",
         ] {
-            if Command::new(tool).arg("--version").output().is_ok() {
+            let mut c = Command::new(tool);
+            c.arg("--version");
+            #[cfg(windows)]
+            c.creation_flags(CREATE_NO_WINDOW);
+            if c.output().is_ok() {
                 return Some(tool.to_string());
             }
         }
@@ -142,14 +153,22 @@ impl PreviewViewer {
     }
 
     fn get_pdf_page_count(input: &Path) -> Option<usize> {
-        if !Command::new("pdfinfo").arg("--version").output().is_ok() {
+        let mut c = Command::new("pdfinfo");
+        c.arg("--version");
+        #[cfg(windows)]
+        c.creation_flags(CREATE_NO_WINDOW);
+        if !c.output().is_ok() {
             return None;
         }
         Self::run_pdfinfo("pdfinfo", input)
     }
 
     fn run_pdfinfo(pdfinfo: &str, input: &Path) -> Option<usize> {
-        let output = Command::new(pdfinfo).arg(input).output().ok()?;
+        let mut c = Command::new(pdfinfo);
+        c.arg(input);
+        #[cfg(windows)]
+        c.creation_flags(CREATE_NO_WINDOW);
+        let output = c.output().ok()?;
         if !output.status.success() {
             return None;
         }
@@ -178,12 +197,14 @@ impl PreviewViewer {
 
         match tool_name {
             "mutool" | "mudraw" => {
-                let out = Command::new(tool)
-                    .args(["draw", "-r", &dpi_str, "-o"])
+                let mut c = Command::new(tool);
+                c.args(["draw", "-r", &dpi_str, "-o"])
                     .arg(output)
                     .arg(input)
-                    .arg(&page_str)
-                    .output()
+                    .arg(&page_str);
+                #[cfg(windows)]
+                c.creation_flags(CREATE_NO_WINDOW);
+                let out = c.output()
                     .map_err(|e| format!("Failed to run {}: {}", tool, e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);
@@ -193,18 +214,20 @@ impl PreviewViewer {
             }
             "gswin64c" | "gswin32c" | "gs" => {
                 let output_str = output.to_string_lossy();
-                let out = Command::new(tool)
-                    .args([
-                        "-dNOPAUSE",
-                        "-dBATCH",
-                        "-sDEVICE=png16m",
-                        &format!("-r{}", dpi),
-                        &format!("-dFirstPage={}", page_str),
-                        &format!("-dLastPage={}", page_str),
-                        &format!("-sOutputFile={}", output_str),
-                    ])
-                    .arg(input)
-                    .output()
+                let mut c = Command::new(tool);
+                c.args([
+                    "-dNOPAUSE",
+                    "-dBATCH",
+                    "-sDEVICE=png16m",
+                    &format!("-r{}", dpi),
+                    &format!("-dFirstPage={}", page_str),
+                    &format!("-dLastPage={}", page_str),
+                    &format!("-sOutputFile={}", output_str),
+                ])
+                .arg(input);
+                #[cfg(windows)]
+                c.creation_flags(CREATE_NO_WINDOW);
+                let out = c.output()
                     .map_err(|e| format!("Failed to run {}: {}", tool, e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);
@@ -215,20 +238,22 @@ impl PreviewViewer {
             "pdftoppm" => {
                 let stem = output.with_extension("");
                 let stem_str = stem.to_string_lossy();
-                let out = Command::new(tool)
-                    .args([
-                        "-f",
-                        &page_str,
-                        "-l",
-                        &page_str,
-                        "-r",
-                        &dpi_str,
-                        "-png",
-                        "-singlefile",
-                    ])
-                    .arg(input)
-                    .arg(stem_str.as_ref())
-                    .output()
+                let mut c = Command::new(tool);
+                c.args([
+                    "-f",
+                    &page_str,
+                    "-l",
+                    &page_str,
+                    "-r",
+                    &dpi_str,
+                    "-png",
+                    "-singlefile",
+                ])
+                .arg(input)
+                .arg(stem_str.as_ref());
+                #[cfg(windows)]
+                c.creation_flags(CREATE_NO_WINDOW);
+                let out = c.output()
                     .map_err(|e| format!("Failed to run pdftoppm: {}", e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);

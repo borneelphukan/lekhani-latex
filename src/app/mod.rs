@@ -12,6 +12,11 @@ use egui::{CentralPanel, Color32, Panel};
 use std::sync::OnceLock;
 use regex::Regex;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn error_line_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"l\.(\d+)").unwrap())
@@ -699,7 +704,10 @@ impl App {
                     self.update_state = UpdateState::None;
                     match result {
                         Ok(path) => {
-                            if let Err(_) = std::process::Command::new(&path).spawn() {
+                            let mut c = std::process::Command::new(&path);
+                            #[cfg(windows)]
+                            c.creation_flags(CREATE_NO_WINDOW);
+                            if let Err(_) = c.spawn() {
                                 // Toast notification not implemented; update state already None
                             } else {
                                 std::process::exit(0);
