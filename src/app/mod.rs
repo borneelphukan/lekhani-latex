@@ -8,6 +8,7 @@ mod editor;
 use std::path::PathBuf;
 use std::time::Instant;
 
+
 use egui::{CentralPanel, Color32, Panel};
 use std::sync::OnceLock;
 use regex::Regex;
@@ -44,7 +45,6 @@ pub struct App {
     tabs: Vec<tab::Tab>,
     active_tab: usize,
     theme: Theme,
-    auto_compile: bool,
     file_dialog_action: Option<FileDialogAction>,
     completion_visible: bool,
     completion_matches: Vec<String>,
@@ -59,6 +59,7 @@ pub struct App {
     update_rx: std::sync::mpsc::Receiver<UpdateMessage>,
     update_tx: std::sync::mpsc::Sender<UpdateMessage>,
     heading_numbered: bool,
+    auto_compile: bool,
     last_auto_compile: Option<Instant>,
     last_content_change: Option<Instant>,
     tab_drag: Option<(usize, f32)>,
@@ -78,7 +79,6 @@ impl App {
             tabs: Vec::new(),
             active_tab: 0,
             theme: Theme::System,
-            auto_compile: true,
             file_dialog_action: None,
             completion_visible: false,
             completion_matches: Vec::new(),
@@ -93,6 +93,7 @@ impl App {
             update_rx,
             update_tx,
             heading_numbered: true,
+            auto_compile: false,
             last_auto_compile: None,
             last_content_change: None,
             tab_drag: None,
@@ -138,8 +139,8 @@ impl App {
         if is_dark {
             style.visuals = egui::Visuals::dark();
             style.visuals.selection.bg_fill = egui::Color32::from_rgb(180, 180, 180);
-            style.visuals.panel_fill = egui::Color32::from_rgb(20, 20, 25);
-            style.visuals.window_fill = egui::Color32::from_rgb(25, 25, 30);
+            style.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(20, 20, 25, 220);
+            style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(25, 25, 30, 220);
             style.visuals.window_corner_radius = egui::CornerRadius::same(12);
             style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
             style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
@@ -151,6 +152,8 @@ impl App {
             style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(65, 65, 80);
         } else {
             style.visuals = egui::Visuals::light();
+            style.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(240, 240, 240, 220);
+            style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(245, 245, 245, 220);
         }
         ctx.set_global_style(style);
     }
@@ -302,6 +305,20 @@ impl eframe::App for App {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
         }
 
+        if ui.ctx().input(|i| i.viewport().close_requested()) {
+            let has_unsaved = self.tabs.iter().any(|t| t.buffer.dirty);
+            if has_unsaved {
+                let res = rfd::MessageDialog::new()
+                    .set_title("Unsaved Changes")
+                    .set_description("You have unsaved documents. Are you sure you want to quit without saving?")
+                    .set_buttons(rfd::MessageButtons::YesNo)
+                    .show();
+                if res != rfd::MessageDialogResult::Yes {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                }
+            }
+        }
+
         if !self.tabs.is_empty() {
             if ui.ctx().input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
                 self.active_tab_mut().buffer.undo();
@@ -347,7 +364,9 @@ impl eframe::App for App {
             }
         }
 
-        if !is_fullscreen {
+        let show_panels = !is_fullscreen || cfg!(target_os = "macos");
+
+        if show_panels {
             Panel::top("menu_bar").show_inside(ui, |ui| {
                 self.menu_bar(ui);
             });
@@ -365,7 +384,9 @@ impl eframe::App for App {
                 .show_inside(ui, |ui| {
                     self.toolbar(ui);
                 });
+        }
 
+        if show_panels {
             Panel::bottom("status_bar")
                 .min_size(22.0)
                 .show_inside(ui, |ui| {
@@ -1096,31 +1117,47 @@ impl App {
     fn output_panel(&mut self, ui: &mut egui::Ui) {
         let log = self.active_tab().output_log.clone();
         let text_color = ui.style().visuals.text_color();
-        ui.vertical(|ui| {
-            ui.label(
-                egui::RichText::new("Output").strong(),
-            );
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    if log.is_empty() {
-                        ui.colored_label(
-                            egui::Color32::GRAY,
-                            "No output to display.",
-                        );
-                    } else {
-                        for (text, color) in &log {
-                            let c = if *color == egui::Color32::WHITE {
-                                text_color
-                            } else {
-                                *color
-                            };
-                            ui.colored_label(c, text);
+        egui::Frame::NONE
+            .fill(if ui.visuals().dark_mode {
+                egui::Color32::from_rgb(30, 30, 35)
+            } else {
+                egui::Color32::from_rgb(245, 245, 248)
+            })
+            .inner_margin(8.0)
+            .corner_radius(egui::CornerRadius::same(6))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Output").strong().size(14.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Clear").clicked() {
+                            if !self.tabs.is_empty() {
+                                self.active_tab_mut().output_log.clear();
+                            }
                         }
-                    }
+                    });
                 });
-        });
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        if log.is_empty() {
+                            ui.colored_label(
+                                egui::Color32::GRAY,
+                                egui::RichText::new("No output to display.").italics(),
+                            );
+                        } else {
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                            for (text, color) in &log {
+                                let c = if *color == egui::Color32::WHITE {
+                                    text_color
+                                } else {
+                                    *color
+                                };
+                                ui.label(egui::RichText::new(text).color(c).family(egui::FontFamily::Monospace).size(13.0));
+                            }
+                        }
+                    });
+            });
     }
 }

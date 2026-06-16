@@ -199,9 +199,6 @@ impl CompilerBridge {
 
 impl Drop for CompilerBridge {
     fn drop(&mut self) {
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
-        }
     }
 }
 

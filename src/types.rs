@@ -77,29 +77,7 @@ impl Theme {
         }
     }
 
-    pub fn gutter_bg(self, ctx: &egui::Context) -> Color32 {
-        match self.resolve(ctx) {
-            Theme::Dark => Color32::from_rgb(30, 34, 40),
-            Theme::Light => Color32::from_rgb(240, 240, 244),
-            Theme::System => unreachable!(),
-        }
-    }
 
-    pub fn gutter_sep(self, ctx: &egui::Context) -> Color32 {
-        match self.resolve(ctx) {
-            Theme::Dark => Color32::from_rgb(48, 54, 62),
-            Theme::Light => Color32::from_rgb(210, 210, 215),
-            Theme::System => unreachable!(),
-        }
-    }
-
-    pub fn gutter_text(self, ctx: &egui::Context) -> Color32 {
-        match self.resolve(ctx) {
-            Theme::Dark => Color32::from_rgb(100, 110, 130),
-            Theme::Light => Color32::from_rgb(150, 155, 165),
-            Theme::System => unreachable!(),
-        }
-    }
 
     pub fn syntax_colors(self, ctx: &egui::Context) -> SyntaxColors {
         match self.resolve(ctx) {

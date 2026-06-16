@@ -219,75 +219,30 @@ impl App {
         if self.tabs.is_empty() {
             return;
         }
-        let line_count = self.active_tab().buffer.line_count();
-        let gutter_width = if line_count > 0 {
-            let digits = line_count.to_string().len();
-            (digits as f32 * 9.0 + 16.0).max(36.0)
-        } else {
-            36.0
-        };
 
         let error_lines = self.active_tab().error_lines.clone();
-        let line_height = ui.ctx().fonts_mut(|f| f.row_height(&FontId::monospace(14.0)));
 
-        ui.horizontal_top(|ui| {
-            let height = ui.available_height();
-            let (gutter_rect, _) = ui.allocate_exact_size(
-                egui::Vec2::new(gutter_width, height),
-                egui::Sense::hover(),
-            );
-            self.paint_gutter(ui, gutter_rect, line_count, &error_lines, line_height);
+        let frame = egui::Frame {
+            fill: ui.visuals().extreme_bg_color,
+            inner_margin: egui::Margin::symmetric(4, 4),
+            corner_radius: ui.visuals().widgets.noninteractive.corner_radius,
+            stroke: ui.visuals().widgets.noninteractive.bg_stroke,
+            ..Default::default()
+        };
 
-            self.text_edit_area(ui, &error_lines, line_height);
+        frame.show(ui, |ui| {
+            egui::ScrollArea::both()
+                .id_salt("editor_main_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.horizontal_top(|ui| {
+                        self.text_edit_area(ui, &error_lines);
+                    });
+                });
         });
     }
 
-    fn paint_gutter(&self, ui: &egui::Ui, rect: egui::Rect, line_count: usize, error_lines: &[usize], line_height: f32) {
-        let painter = ui.painter_at(rect);
-        let ctx = ui.ctx();
-        let bg = self.theme.gutter_bg(ctx);
-        painter.rect_filled(rect, 0.0, bg);
-
-        let sep_x = rect.right() - 1.0;
-        let sep_color = self.theme.gutter_sep(ctx);
-        painter.line_segment(
-            [
-                egui::pos2(sep_x, rect.top()),
-                egui::pos2(sep_x, rect.bottom()),
-            ],
-            egui::Stroke::new(1.0, sep_color),
-        );
-
-        let text_color = self.theme.gutter_text(ctx);
-        let error_dot_color = Color32::from_rgb(220, 60, 60);
-        let font_id = FontId::monospace(14.0);
-
-        let start_y = rect.top();
-        let dot_x = rect.left() + 6.0;
-
-        for i in 1..=line_count {
-            let y = start_y + (i - 1) as f32 * line_height;
-            if y > rect.bottom() {
-                break;
-            }
-            if error_lines.contains(&i) {
-                painter.circle_filled(
-                    egui::pos2(dot_x, y + 5.0),
-                    3.0,
-                    error_dot_color,
-                );
-            }
-            painter.text(
-                egui::pos2(rect.right() - 6.0, y),
-                egui::Align2::RIGHT_TOP,
-                &i.to_string(),
-                font_id.clone(),
-                text_color,
-            );
-        }
-    }
-
-    fn text_edit_area(&mut self, ui: &mut egui::Ui, error_lines: &[usize], line_height: f32) {
+    fn text_edit_area(&mut self, ui: &mut egui::Ui, error_lines: &[usize]) {
         let theme = self.theme;
         let ctx = ui.ctx().clone();
         let error_lines = error_lines.to_vec();
@@ -415,14 +370,20 @@ impl App {
                 layouter_ui.fonts_mut(|f| f.layout_job(job))
             };
 
-        let response = ui.add_sized(
-            ui.available_size(),
-            TextEdit::multiline(&mut text)
-                .code_editor()
-                .desired_width(f32::INFINITY)
-                .layouter(&mut layouter),
-        );
-
+        let output = TextEdit::multiline(&mut text)
+            .font(egui::TextStyle::Monospace)
+            .frame(egui::Frame::NONE)
+            .desired_width(f32::INFINITY)
+            .layouter(&mut layouter)
+            .show(ui);
+        
+        let mut cursor_screen_pos = output.response.rect.left_bottom();
+        if let Some(range) = &output.cursor_range {
+            let cursor_rect = output.galley.pos_from_cursor(range.primary);
+            cursor_screen_pos = output.galley_pos + cursor_rect.left_bottom().to_vec2();
+        }
+        
+        let response = output.response;
         let cursor_char = egui::TextEdit::load_state(ui.ctx(), response.id)
             .and_then(|state| state.cursor.char_range())
             .map_or(0, |range| range.primary.index);
@@ -492,11 +453,7 @@ impl App {
         }
 
         if self.completion_visible {
-            let (cursor_line, _) = self.active_tab().buffer.cursor_line_col();
-            let popup_pos = egui::pos2(
-                response.rect.left() + 4.0,
-                response.rect.top() + (cursor_line as f32) * line_height + line_height,
-            );
+            let popup_pos = cursor_screen_pos;
             let matches = self.completion_matches.clone();
             let range = self.completion_byte_range;
             let selected_index = self.completion_selected;

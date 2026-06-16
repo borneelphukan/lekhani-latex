@@ -71,12 +71,15 @@ impl App {
                     };
                 }
                 let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-                if ui.add(egui::Button::selectable(fs, "\u{26F6} Fullscreen    F12"))
-                    .clicked()
-                {
-                    ui.close();
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
-                }
+                ui.scope(|ui| {
+                    if fs && ui.visuals().dark_mode {
+                        ui.visuals_mut().selection.bg_fill = egui::Color32::from_rgb(60, 60, 60);
+                    }
+                    if ui.add(egui::Button::selectable(fs, "\u{26F6} Fullscreen    F12")).clicked() {
+                        ui.close();
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
+                    }
+                });
             });
 
             ui.menu_button("Help", |ui| {
