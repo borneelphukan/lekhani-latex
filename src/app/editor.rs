@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::time::Instant;
-use egui::{Color32, FontId, ScrollArea, TextEdit};
+use egui::{Color32, ScrollArea, TextEdit};
 use crate::app::App;
 use crate::completions;
 use crate::lexer;
@@ -301,6 +301,27 @@ impl App {
 
         let tab = self.active_tab_mut();
         let mut text = std::mem::take(&mut tab.buffer.text);
+        
+        let id_source = "editor_text_edit";
+        let edit_id = ui.make_persistent_id(id_source);
+        let mut selection_byte_range = None;
+        let popup_id = egui::Id::new("context_menu").with(edit_id);
+        let menu_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+        if menu_open {
+            if let Some(state) = egui::TextEdit::load_state(ui.ctx(), edit_id) {
+                if let Some(range) = state.cursor.char_range() {
+                    let min_char = range.primary.index.min(range.secondary.index);
+                    let max_char = range.primary.index.max(range.secondary.index);
+                    if min_char < max_char {
+                        let min_byte = text.char_indices().nth(min_char).map_or(text.len(), |(b, _)| b);
+                        let max_byte = text.char_indices().nth(max_char).map_or(text.len(), |(b, _)| b);
+                        selection_byte_range = Some(min_byte..max_byte);
+                    }
+                }
+            }
+        }
+        let selection_bg = ctx.global_style().visuals.selection.bg_fill;
+
         let mut layouter =
             move |layouter_ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
                 let text = buf.as_str();
@@ -328,38 +349,81 @@ impl App {
                     Color32::from_rgb(255, 200, 200)
                 };
 
+                let mut sections = Vec::new();
+                for token in tokens {
+                    let color = match token.token_type {
+                        lexer::TokenType::Command => syn.cmd,
+                        lexer::TokenType::MathDollar
+                        | lexer::TokenType::MathDoubleDollar => syn.math,
+                        lexer::TokenType::OpenBrace
+                        | lexer::TokenType::CloseBrace => syn.brace,
+                        lexer::TokenType::Comment => syn.comment,
+                        lexer::TokenType::Text => syn.text,
+                    };
+                    let line = line_of(token.start);
+                    let base_bg = if error_lines.contains(&line) {
+                        err_bg
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    
+                    if let Some(sel) = &selection_byte_range {
+                        let overlap_start = token.start.max(sel.start);
+                        let overlap_end = token.end.min(sel.end);
+                        if overlap_start < overlap_end {
+                            if token.start < overlap_start {
+                                sections.push(egui::text::LayoutSection {
+                                    leading_space: 0.0,
+                                    byte_range: token.start..overlap_start,
+                                    format: egui::text::TextFormat {
+                                        font_id: egui::FontId::monospace(14.0),
+                                        color,
+                                        background: base_bg,
+                                        ..Default::default()
+                                    }
+                                });
+                            }
+                            sections.push(egui::text::LayoutSection {
+                                leading_space: 0.0,
+                                byte_range: overlap_start..overlap_end,
+                                format: egui::text::TextFormat {
+                                    font_id: egui::FontId::monospace(14.0),
+                                    color,
+                                    background: selection_bg,
+                                    ..Default::default()
+                                }
+                            });
+                            if overlap_end < token.end {
+                                sections.push(egui::text::LayoutSection {
+                                    leading_space: 0.0,
+                                    byte_range: overlap_end..token.end,
+                                    format: egui::text::TextFormat {
+                                        font_id: egui::FontId::monospace(14.0),
+                                        color,
+                                        background: base_bg,
+                                        ..Default::default()
+                                    }
+                                });
+                            }
+                            continue;
+                        }
+                    }
+
+                    sections.push(egui::text::LayoutSection {
+                        leading_space: 0.0,
+                        byte_range: token.start..token.end,
+                        format: egui::text::TextFormat {
+                            font_id: egui::FontId::monospace(14.0),
+                            color,
+                            background: base_bg,
+                            ..Default::default()
+                        },
+                    });
+                }
+
                 let job = egui::text::LayoutJob {
                     text: text.into(),
-                    sections: tokens
-                        .iter()
-                        .map(|token| {
-                            let color = match token.token_type {
-                                lexer::TokenType::Command => syn.cmd,
-                                lexer::TokenType::MathDollar
-                                | lexer::TokenType::MathDoubleDollar => syn.math,
-                                lexer::TokenType::OpenBrace
-                                | lexer::TokenType::CloseBrace => syn.brace,
-                                lexer::TokenType::Comment => syn.comment,
-                                lexer::TokenType::Text => syn.text,
-                            };
-                            let line = line_of(token.start);
-                            let bg = if error_lines.contains(&line) {
-                                err_bg
-                            } else {
-                                Color32::TRANSPARENT
-                            };
-                            egui::text::LayoutSection {
-                                leading_space: 0.0,
-                                byte_range: token.start..token.end,
-                                format: egui::text::TextFormat {
-                                    font_id: FontId::monospace(14.0),
-                                    color,
-                                    background: bg,
-                                    ..Default::default()
-                                },
-                            }
-                        })
-                        .collect(),
+                    sections,
                     wrap: egui::text::TextWrapping {
                         max_width: wrap_width,
                         ..Default::default()
@@ -370,10 +434,26 @@ impl App {
                 layouter_ui.fonts_mut(|f| f.layout_job(job))
             };
 
+        let id_source = "editor_text_edit";
+        let edit_id = ui.make_persistent_id(id_source);
+        
+        let previous_state = egui::TextEdit::load_state(ui.ctx(), edit_id);
+        
+        let mut tab_pressed = false;
+        if ui.memory(|mem| mem.has_focus(edit_id)) {
+            ui.input_mut(|i| {
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
+                    tab_pressed = true;
+                }
+            });
+        }
+
         let output = TextEdit::multiline(&mut text)
+            .id_source(id_source)
             .font(egui::TextStyle::Monospace)
             .frame(egui::Frame::NONE)
             .desired_width(f32::INFINITY)
+            .lock_focus(true)
             .layouter(&mut layouter)
             .show(ui);
         
@@ -384,14 +464,134 @@ impl App {
         }
         
         let response = output.response;
+        
+        let secondary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
+        let secondary_released = ui.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
+        if secondary_down || secondary_released || response.secondary_clicked() {
+            if let Some(state) = previous_state {
+                state.store(ui.ctx(), response.id);
+            }
+        }
+        
         let cursor_char = egui::TextEdit::load_state(ui.ctx(), response.id)
             .and_then(|state| state.cursor.char_range())
             .map_or(0, |range| range.primary.index);
-        let cursor_pos = text
+        let mut cursor_pos = text
             .char_indices()
             .nth(cursor_char)
             .map_or(text.len(), |(b, _)| b);
-        let changed = response.changed();
+        let mut changed = response.changed();
+        
+        if tab_pressed {
+            text.insert_str(cursor_pos, "    ");
+            changed = true;
+            
+            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                if let Some(mut range) = state.cursor.char_range() {
+                    range.primary.index += 4;
+                    range.secondary.index += 4;
+                    state.cursor.set_char_range(Some(range));
+                    state.store(ui.ctx(), response.id);
+                }
+            }
+            cursor_pos += 4;
+        }
+        
+        let mut do_cut = false;
+        let mut do_copy = false;
+        let mut do_paste = false;
+        let mut do_select_all = false;
+        
+        response.context_menu(|ui| {
+            if ui.button("Cut (Ctrl + X)").clicked() {
+                do_cut = true;
+                ui.memory_mut(|m| m.request_focus(response.id));
+                ui.close();
+            }
+            if ui.button("Copy (Ctrl + C)").clicked() {
+                do_copy = true;
+                ui.memory_mut(|m| m.request_focus(response.id));
+                ui.close();
+            }
+            if ui.button("Paste (Ctrl + V)").clicked() {
+                do_paste = true;
+                ui.memory_mut(|m| m.request_focus(response.id));
+                ui.close();
+            }
+            if ui.button("Select All (Ctrl + A)").clicked() {
+                do_select_all = true;
+                ui.memory_mut(|m| m.request_focus(response.id));
+                ui.close();
+            }
+        });
+
+        if do_copy || do_cut {
+            if let Some(state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                if let Some(range) = state.cursor.char_range() {
+                    let min = range.primary.index.min(range.secondary.index);
+                    let max = range.primary.index.max(range.secondary.index);
+                    if min < max {
+                        let selected_text: String = text.chars().skip(min).take(max - min).collect();
+                        ui.ctx().copy_text(selected_text);
+                        if do_cut {
+                            let min_byte = text.char_indices().nth(min).map_or(text.len(), |(b, _)| b);
+                            let max_byte = text.char_indices().nth(max).map_or(text.len(), |(b, _)| b);
+                            text.replace_range(min_byte..max_byte, "");
+                            changed = true;
+                            
+                            let mut new_state = state;
+                            new_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(min))));
+                            new_state.store(ui.ctx(), response.id);
+                            cursor_pos = min_byte;
+                        }
+                    }
+                }
+            }
+        }
+
+        if do_paste {
+            let mut clipboard = String::new();
+            if let Ok(mut cb) = arboard::Clipboard::new() {
+                if let Ok(clip_text) = cb.get_text() {
+                    clipboard = clip_text;
+                }
+            }
+            if !clipboard.is_empty() {
+                if let Some(state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                    let mut min_char = cursor_char;
+                    let mut max_char = cursor_char;
+                    if let Some(range) = state.cursor.char_range() {
+                        min_char = range.primary.index.min(range.secondary.index);
+                        max_char = range.primary.index.max(range.secondary.index);
+                    }
+                    let min_byte = text.char_indices().nth(min_char).map_or(text.len(), |(b, _)| b);
+                    let max_byte = text.char_indices().nth(max_char).map_or(text.len(), |(b, _)| b);
+                    
+                    text.replace_range(min_byte..max_byte, &clipboard);
+                    changed = true;
+                    
+                    let pasted_chars = clipboard.chars().count();
+                    let new_cursor_char = min_char + pasted_chars;
+                    
+                    let mut new_state = state;
+                    new_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(new_cursor_char))));
+                    new_state.store(ui.ctx(), response.id);
+                    cursor_pos = min_byte + clipboard.len();
+                }
+            }
+        }
+
+        if do_select_all {
+            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                let char_count = text.chars().count();
+                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(0),
+                    egui::text::CCursor::new(char_count)
+                )));
+                state.store(ui.ctx(), response.id);
+            }
+        }
+        
         if changed {
             self.last_content_change = Some(Instant::now());
         }

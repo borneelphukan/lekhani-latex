@@ -12,7 +12,7 @@ use egui::ColorImage;
 
 #[derive(Debug)]
 pub enum PreviewEvent {
-    NewImage(ColorImage),
+    NewImage(usize, ColorImage),
     Error(String),
     Unsupported,
 }
@@ -20,16 +20,16 @@ pub enum PreviewEvent {
 pub struct PreviewViewer {
     receiver: mpsc::Receiver<PreviewEvent>,
     sender: mpsc::Sender<PreviewEvent>,
-    pub current_image: Option<ColorImage>,
-    pub base_image: Option<ColorImage>,
+    pub rendered_pages: std::collections::HashMap<usize, ColorImage>,
+    pub active_renders: std::collections::HashSet<usize>,
     pub zoom: f32,
     pub render_error: Option<String>,
     pub last_pdf_path: Option<PathBuf>,
     pub page: usize,
     pub num_pages: Option<usize>,
     pub image_size: Option<[usize; 2]>,
+    pub pan_mode: bool,
     renderer: Option<String>,
-    render_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl PreviewViewer {
@@ -38,16 +38,16 @@ impl PreviewViewer {
         Self {
             receiver: rx,
             sender: tx,
-            current_image: None,
-            base_image: None,
+            rendered_pages: std::collections::HashMap::new(),
+            active_renders: std::collections::HashSet::new(),
             zoom: 1.0,
             render_error: None,
             last_pdf_path: None,
             page: 0,
             num_pages: None,
             image_size: None,
+            pan_mode: false,
             renderer: None,
-            render_handle: None,
         }
     }
 
@@ -62,7 +62,11 @@ impl PreviewViewer {
         }
     }
 
-    pub fn render_pdf(&mut self, pdf_path: &Path, page: usize) {
+    pub fn ensure_page_rendered(&mut self, pdf_path: &Path, page: usize) {
+        if self.rendered_pages.contains_key(&page) || self.active_renders.contains(&page) {
+            return;
+        }
+
         self.last_pdf_path = Some(pdf_path.to_path_buf());
 
         if self.renderer.is_none() {
@@ -100,11 +104,9 @@ impl PreviewViewer {
         let dpi = 150u32;
         let tool = renderer;
 
-        if let Some(handle) = self.render_handle.take() {
-            let _ = handle.join();
-        }
+        self.active_renders.insert(page);
 
-        let handle = thread::spawn(move || {
+        thread::spawn(move || {
             let result = Self::run_renderer(&tool, dpi, &output_path, &path, page);
             match result {
                 Ok(()) => match image::open(&output_path) {
@@ -114,7 +116,7 @@ impl PreviewViewer {
                         let pixels = rgba.into_raw();
                         let color_image =
                             ColorImage::from_rgba_unmultiplied(size, &pixels);
-                        let _ = tx.send(PreviewEvent::NewImage(color_image));
+                        let _ = tx.send(PreviewEvent::NewImage(page, color_image));
                     }
                     Err(e) => {
                         let _ = tx.send(PreviewEvent::Error(format!(
@@ -128,7 +130,6 @@ impl PreviewViewer {
                 }
             }
         });
-        self.render_handle = Some(handle);
     }
 
     fn find_renderer() -> Option<String> {
@@ -269,14 +270,17 @@ impl PreviewViewer {
         match self.receiver.try_recv() {
             Ok(event) => {
                 match &event {
-                    PreviewEvent::NewImage(img) => {
-                        self.base_image = Some(img.clone());
-                        self.current_image = Some(img.clone());
-                        self.image_size = Some(img.size);
+                    PreviewEvent::NewImage(page, img) => {
+                        self.rendered_pages.insert(*page, img.clone());
+                        self.active_renders.remove(page);
+                        if self.image_size.is_none() {
+                            self.image_size = Some(img.size);
+                        }
                         self.render_error = None;
                     }
                     PreviewEvent::Error(e) => {
                         self.render_error = Some(e.clone());
+                        // active_renders should probably be cleared or something but keeping it simple
                     }
                     PreviewEvent::Unsupported => {
                         self.render_error = Some(
@@ -294,8 +298,6 @@ impl PreviewViewer {
 
 impl Drop for PreviewViewer {
     fn drop(&mut self) {
-        if let Some(handle) = self.render_handle.take() {
-            let _ = handle.join();
-        }
+        // Active renders will just terminate when the app closes since they're daemon-like threads
     }
 }

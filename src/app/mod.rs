@@ -194,7 +194,9 @@ impl App {
                         ));
                         tab.preview.page = 0;
                         tab.preview.num_pages = None;
-                        tab.preview.render_pdf(&pdf_path, 0);
+                        tab.preview.rendered_pages.clear();
+                        tab.preview_textures.clear();
+                        tab.preview.ensure_page_rendered(&pdf_path, 0);
                         self.show_outputs_requested = true;
                     }
                     CompileEvent::Failure(errors) => {
@@ -254,16 +256,12 @@ impl App {
 
             while let Some(event) = tab.preview.poll() {
                 match event {
-                    PreviewEvent::NewImage(color_image) => {
-                        tab.preview.current_image = Some(color_image);
+                    PreviewEvent::NewImage(_page, _color_image) => {
+                        // Handled by update_preview_textures because it needs context
                     }
                     PreviewEvent::Error(e) => {
-                        if tab.preview.current_image.is_some() && tab.preview.page > 0 {
-                            tab.preview.page -= 1;
-                            tab.preview.num_pages = Some(tab.preview.page + 1);
-                        } else {
-                            tab.preview.render_error = Some(e);
-                        }
+                        // For simplicity, just log or set error if the currently viewed page failed
+                        tab.preview.render_error = Some(e);
                     }
                     PreviewEvent::Unsupported => {
                         tab.preview.render_error = Some(
@@ -280,12 +278,14 @@ impl App {
 
     fn update_preview_textures(&mut self, ctx: &egui::Context) {
         for tab in &mut self.tabs {
-            if let Some(img) = tab.preview.current_image.clone() {
-                tab.preview_texture = Some(ctx.load_texture(
-                    &format!("preview_{}", tab.title),
-                    img,
-                    egui::TextureOptions::LINEAR,
-                ));
+            for (page, img) in &tab.preview.rendered_pages {
+                if !tab.preview_textures.contains_key(page) {
+                    tab.preview_textures.insert(*page, ctx.load_texture(
+                        &format!("preview_{}_{}", tab.title, page),
+                        img.clone(),
+                        egui::TextureOptions::LINEAR,
+                    ));
+                }
             }
         }
     }
@@ -319,11 +319,18 @@ impl eframe::App for App {
             }
         }
 
+        if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+            self.file_dialog_action = Some(FileDialogAction::Open);
+        }
+
         if !self.tabs.is_empty() {
-            if ui.ctx().input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
+            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+                self.file_dialog_action = Some(FileDialogAction::Save);
+            }
+            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z)) {
                 self.active_tab_mut().buffer.undo();
             }
-            if ui.ctx().input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
+            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::Y)) {
                 self.active_tab_mut().buffer.redo();
             }
         }
@@ -582,7 +589,7 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         for tab in &mut self.tabs {
             // Release GPU textures before the rendering context is destroyed
-            tab.preview_texture = None;
+            tab.preview_textures.clear();
             if tab.buffer.dirty {
                 if let Some(path) = tab.buffer.path().map(|p| p.to_path_buf()) {
                     let _ = tab.buffer.save_as(&path);

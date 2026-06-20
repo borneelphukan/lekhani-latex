@@ -14,12 +14,13 @@ pub struct Tab {
     pub compiler: CompilerBridge,
     pub preview: PreviewViewer,
     pub show_preview: bool,
-    pub preview_texture: Option<egui::TextureHandle>,
+    pub preview_textures: std::collections::HashMap<usize, egui::TextureHandle>,
     pub status_message: String,
     pub error_message: Option<String>,
     pub error_lines: Vec<usize>,
     pub output_log: Vec<(String, Color32)>,
     pub scroll_offset: egui::Vec2,
+    pub scroll_request: Option<egui::Vec2>,
     pub compile_start_time: Option<Instant>,
 }
 
@@ -31,12 +32,13 @@ impl Tab {
             compiler: CompilerBridge::new(CompilerConfig::default()),
             preview: PreviewViewer::new(),
             show_preview: true,
-            preview_texture: None,
+            preview_textures: std::collections::HashMap::new(),
             status_message,
             error_message: None,
             error_lines: Vec::new(),
             output_log: Vec::new(),
             scroll_offset: egui::Vec2::ZERO,
+            scroll_request: None,
             compile_start_time: None,
         }
     }
