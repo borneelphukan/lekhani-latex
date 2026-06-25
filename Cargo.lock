@@ -1959,6 +1959,7 @@ dependencies = [
  "image",
  "regex",
  "rfd",
+ "serde_json",
  "thiserror 2.0.18",
  "ureq",
  "winres",

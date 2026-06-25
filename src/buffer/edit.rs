@@ -101,4 +101,28 @@ impl EditorBuffer {
         }
         self.redo_stack.clear();
     }
+
+    pub fn replace_all(&mut self, new_text: &str) {
+        let old_text = self.text.clone();
+        if old_text == new_text {
+            return;
+        }
+        // First delete everything
+        self.push_undo(EditToken {
+            kind: EditKind::Delete(old_text),
+            position: 0,
+        });
+        self.text.clear();
+        self.cursor = 0;
+        
+        // Then insert new text
+        self.push_undo(EditToken {
+            kind: EditKind::Insert(new_text.to_string()),
+            position: 0,
+        });
+        self.text = new_text.to_string();
+        self.cursor = new_text.len();
+        self.dirty = true;
+        self.rebuild_line_starts();
+    }
 }

@@ -82,6 +82,14 @@ impl App {
                 });
             });
 
+            ui.menu_button("Options", |ui| {
+                ui.set_min_width(220.0);
+                if ui.button("Integrate LLM").clicked() {
+                    self.show_llm_settings = true;
+                    ui.close();
+                }
+            });
+
             ui.menu_button("Help", |ui| {
                 ui.set_min_width(220.0);
                 if ui.button("Check for Updates").clicked() {
@@ -102,6 +110,7 @@ impl App {
             return;
         }
         let tab = self.active_tab_mut();
+        tab.show_preview = true;
         let path = tab.buffer.path().map(|p| p.to_path_buf());
         if let Some(ref path) = path {
             if let Err(e) = std::fs::write(path, &tab.buffer.text) {
@@ -114,6 +123,55 @@ impl App {
             tab.error_message =
                 Some("Please save the file before compiling.".into());
         }
+    }
+
+    pub(super) fn trigger_llm_correction(&mut self) {
+        if self.tabs.is_empty() || self.llm_correction_in_progress {
+            return;
+        }
+        self.llm_correction_in_progress = true;
+        let tab = self.active_tab_mut();
+        let text = tab.buffer.text.clone();
+        let tx = self.llm_tx.clone();
+        let api_key = self.llm_api_key.clone();
+        
+        std::thread::spawn(move || {
+            let prompt = format!("Fix any LaTeX syntax errors in the following document. Return only the corrected LaTeX code without any additional explanation or markdown blocks.\n\n{}", text);
+            
+            let body = serde_json::to_string(&serde_json::json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            })).unwrap_or_default();
+
+            let request = ureq::post("https://api.openai.com/v1/chat/completions")
+                .header("Authorization", &format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .send(body);
+                
+            match request {
+                Ok(response) => {
+                    use std::io::Read;
+                    let mut reader = response.into_body().into_reader();
+                    let mut body_str = String::new();
+                    let _ = reader.read_to_string(&mut body_str);
+                    
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_str) {
+                        if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
+                            let _ = tx.send(Ok(content.to_string()));
+                        } else {
+                            let _ = tx.send(Err("Invalid response format from LLM".to_string()));
+                        }
+                    } else {
+                        let _ = tx.send(Err("Failed to parse LLM response".to_string()));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("LLM network error: {}", e)));
+                }
+            }
+        });
     }
 
     pub(super) fn new_document(&mut self) {

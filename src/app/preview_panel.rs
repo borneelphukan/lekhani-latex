@@ -210,12 +210,21 @@ impl App {
             } else {
                 let avail = ui.available_size();
                 let (_, resp) = ui.allocate_exact_size(avail, egui::Sense::hover());
+                let text = if let Some(err) = &self.active_tab().preview.render_error {
+                    format!("Preview error: {}", err)
+                } else {
+                    "No preview available".to_string()
+                };
                 ui.painter().text(
                     resp.rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "No preview available",
-                    egui::FontId::proportional(16.0),
-                    Color32::GRAY,
+                    text,
+                    egui::FontId::proportional(14.0),
+                    if self.active_tab().preview.render_error.is_some() {
+                        Color32::from_rgb(220, 60, 60)
+                    } else {
+                        Color32::GRAY
+                    },
                 );
             }
         });

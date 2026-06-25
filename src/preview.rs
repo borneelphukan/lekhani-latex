@@ -13,7 +13,7 @@ use egui::ColorImage;
 #[derive(Debug)]
 pub enum PreviewEvent {
     NewImage(usize, ColorImage),
-    Error(String),
+    Error(usize, String),
     Unsupported,
 }
 
@@ -86,11 +86,14 @@ impl PreviewViewer {
 
         if let Some(num_pages) = self.num_pages {
             if page >= num_pages {
-                let _ = self.sender.send(PreviewEvent::Error(format!(
-                    "Page {} does not exist (PDF has {} pages)",
-                    page + 1,
-                    num_pages
-                )));
+                let _ = self.sender.send(PreviewEvent::Error(
+                    page,
+                    format!(
+                        "Page {} does not exist (PDF has {} pages)",
+                        page + 1,
+                        num_pages
+                    ),
+                ));
                 return;
             }
         }
@@ -119,14 +122,14 @@ impl PreviewViewer {
                         let _ = tx.send(PreviewEvent::NewImage(page, color_image));
                     }
                     Err(e) => {
-                        let _ = tx.send(PreviewEvent::Error(format!(
-                            "Failed to decode rendered image: {}",
-                            e
-                        )));
+                        let _ = tx.send(PreviewEvent::Error(
+                            page,
+                            format!("Failed to decode rendered image: {}", e),
+                        ));
                     }
                 },
                 Err(e) => {
-                    let _ = tx.send(PreviewEvent::Error(e));
+                    let _ = tx.send(PreviewEvent::Error(page, e));
                 }
             }
         });
@@ -278,9 +281,9 @@ impl PreviewViewer {
                         }
                         self.render_error = None;
                     }
-                    PreviewEvent::Error(e) => {
+                    PreviewEvent::Error(page, e) => {
                         self.render_error = Some(e.clone());
-                        // active_renders should probably be cleared or something but keeping it simple
+                        self.active_renders.remove(page);
                     }
                     PreviewEvent::Unsupported => {
                         self.render_error = Some(
