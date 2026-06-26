@@ -137,21 +137,21 @@ impl App {
         ui.horizontal(|ui| {
             let btn_size = egui::vec2(28.0, 28.0);
 
-            if ui.add_sized(btn_size, egui::Button::new(
+            if ui.add_sized(btn_size, crate::components::button::icon(
                 egui::RichText::new("B").size(14.0).strong(),
             )).on_hover_text("Bold").clicked() {
                 let tab = self.active_tab_mut();
                 tab.buffer.insert_str("\\textbf{}");
                 tab.buffer.cursor -= 1;
             }
-            if ui.add_sized(btn_size, egui::Button::new(
+            if ui.add_sized(btn_size, crate::components::button::icon(
                 egui::RichText::new("I").size(14.0).strong(),
             )).on_hover_text("Italic").clicked() {
                 let tab = self.active_tab_mut();
                 tab.buffer.insert_str("\\textit{}");
                 tab.buffer.cursor -= 1;
             }
-            if ui.add_sized(btn_size, egui::Button::new(
+            if ui.add_sized(btn_size, crate::components::button::icon(
                 egui::RichText::new("U").size(14.0).strong(),
             )).on_hover_text("Underline").clicked() {
                 let tab = self.active_tab_mut();
@@ -161,8 +161,7 @@ impl App {
 
             ui.separator();
 
-            egui::ComboBox::from_id_salt("header_dropdown")
-                .selected_text(&display_label)
+            crate::components::dropdown::dropdown("header_dropdown", &display_label)
                 .width(140.0)
                 .show_ui(ui, |ui| {
                     if ui.add(egui::Button::selectable(current_heading.is_none(), "Paragraph")).clicked() {
@@ -199,14 +198,14 @@ impl App {
 
             ui.separator();
             let can_undo = self.active_tab().buffer.can_undo();
-            if ui.add_enabled(can_undo, egui::Button::new("Undo"))
+            if ui.add_enabled(can_undo, crate::components::button::standard("Undo"))
                 .on_hover_text("Ctrl+Z")
                 .clicked()
             {
                 self.active_tab_mut().buffer.undo();
             }
             let can_redo = self.active_tab().buffer.can_redo();
-            if ui.add_enabled(can_redo, egui::Button::new("Redo"))
+            if ui.add_enabled(can_redo, crate::components::button::standard("Redo"))
                 .on_hover_text("Ctrl+Y")
                 .clicked()
             {
@@ -686,7 +685,7 @@ impl App {
                                 for (i, cmd) in matches.iter().enumerate() {
                                     let label = cmd.replacen('\\', "", 1);
                                     let is_selected = i == selected_index;
-                                    let mut button = egui::Button::new(&label);
+                                    let mut button = crate::components::button::standard(&label);
                                     if is_selected {
                                         let select_bg = match resolved {
                                             Theme::Dark => {

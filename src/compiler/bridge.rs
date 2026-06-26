@@ -1,9 +1,9 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -11,6 +11,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use crate::types::CompilerConfig;
+use super::parser::{extract_errors, extract_warnings, read_log_fatal};
 
 #[derive(Debug, Clone)]
 pub enum CompileEvent {
@@ -26,6 +27,7 @@ pub struct CompilerBridge {
     sender: mpsc::Sender<CompileEvent>,
     status: CompileStatus,
     join_handle: Option<thread::JoinHandle<()>>,
+    active_pid: Arc<AtomicU32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,10 +47,20 @@ impl CompilerBridge {
             sender: tx,
             status: CompileStatus::Idle,
             join_handle: None,
+            active_pid: Arc::new(AtomicU32::new(0)),
         }
     }
 
     pub fn compile(&mut self, file_path: &Path) {
+        // Kill the previously running process if it exists
+        let pid = self.active_pid.load(Ordering::SeqCst);
+        if pid != 0 {
+            #[cfg(unix)]
+            let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+            #[cfg(windows)]
+            let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+        }
+
         // Join any previous compilation thread before starting a new one
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
@@ -58,6 +70,7 @@ impl CompilerBridge {
         let config = self.config.clone();
         let path = file_path.to_path_buf();
         self.status = CompileStatus::Running;
+        let active_pid = self.active_pid.clone();
 
         let handle = thread::spawn(move || {
             let _ = tx.send(CompileEvent::Started);
@@ -126,30 +139,43 @@ impl CompilerBridge {
             #[cfg(windows)]
             cmd.creation_flags(CREATE_NO_WINDOW);
 
-            match cmd.output() {
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let warnings = extract_warnings(&stderr, &stdout, &log_path);
-                    if !warnings.is_empty() {
-                        let _ = tx.send(CompileEvent::Warnings(warnings));
-                    }
+            cmd.stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
 
-                    let success = output.status.success();
-                    // Also check the log for the presence of fatal errors
-                    let log_has_fatal = read_log_fatal(&log_path);
+            match cmd.spawn() {
+                Ok(child) => {
+                    active_pid.store(child.id(), Ordering::SeqCst);
+                    match child.wait_with_output() {
+                        Ok(output) => {
+                            active_pid.store(0, Ordering::SeqCst);
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            let warnings = extract_warnings(&stderr, &stdout, &log_path);
+                            if !warnings.is_empty() {
+                                let _ = tx.send(CompileEvent::Warnings(warnings));
+                            }
 
-                    if success && !log_has_fatal {
-                        if pdf_path.exists() {
-                            let _ = tx.send(CompileEvent::Success(pdf_path));
-                        } else {
-                            let _ = tx.send(CompileEvent::Failure(vec![
-                                "Compilation finished but no PDF was produced.".into(),
-                            ]));
+                            let success = output.status.success();
+                            // Also check the log for the presence of fatal errors
+                            let log_has_fatal = read_log_fatal(&log_path);
+
+                            if success && !log_has_fatal {
+                                if pdf_path.exists() {
+                                    let _ = tx.send(CompileEvent::Success(pdf_path));
+                                } else {
+                                    let _ = tx.send(CompileEvent::Failure(vec![
+                                        "Compilation finished but no PDF was produced.".into(),
+                                    ]));
+                                }
+                            } else {
+                                let errors = extract_errors(&stderr, &stdout, &log_path);
+                                let _ = tx.send(CompileEvent::Failure(errors));
+                            }
                         }
-                    } else {
-                        let errors = extract_errors(&stderr, &stdout, &log_path);
-                        let _ = tx.send(CompileEvent::Failure(errors));
+                        Err(e) => {
+                            active_pid.store(0, Ordering::SeqCst);
+                            let _ = tx.send(CompileEvent::Failure(vec![format!("Failed to wait for '{}': {}", config.command, e)]));
+                        }
                     }
                 }
                 Err(e) => {
@@ -192,6 +218,7 @@ impl CompilerBridge {
         self.status
     }
 
+    #[allow(dead_code)]
     pub fn reset_status(&mut self) {
         self.status = CompileStatus::Idle;
     }
@@ -200,107 +227,4 @@ impl CompilerBridge {
 impl Drop for CompilerBridge {
     fn drop(&mut self) {
     }
-}
-
-fn read_log_fatal(log_path: &Path) -> bool {
-    if let Ok(content) = std::fs::read_to_string(log_path) {
-        content.contains("Fatal error occurred")
-    } else {
-        false
-    }
-}
-
-fn extract_warnings(stderr: &str, stdout: &str, log_path: &Path) -> Vec<String> {
-    let combined = format!("{}\n{}", stderr, stdout);
-    let mut warnings: Vec<String> = combined
-        .lines()
-        .filter(|l| {
-            l.contains("Warning:")
-                || l.contains("Overfull")
-                || l.contains("Underfull")
-        })
-        .map(|l| l.trim().to_string())
-        .collect();
-
-    // Also check the log file for warnings
-    if let Ok(log) = std::fs::read_to_string(log_path) {
-        for line in log.lines() {
-            let trimmed = line.trim();
-            if (trimmed.contains("Warning:")
-                || trimmed.contains("Overfull")
-                || trimmed.contains("Underfull"))
-                && !warnings.contains(&trimmed.to_string())
-            {
-                warnings.push(trimmed.to_string());
-            }
-        }
-    }
-
-    warnings.truncate(10);
-    warnings
-}
-
-fn extract_errors(stderr: &str, stdout: &str, log_path: &Path) -> Vec<String> {
-    let combined = format!("{}\n{}", stderr, stdout);
-
-    // 1. Try extracting real LaTeX errors from stdout/stderr
-    let mut errors: Vec<String> = combined
-        .lines()
-        .filter(|l| {
-            // Real LaTeX errors start with "! " and aren't the boilerplate tail lines
-            (l.starts_with("! ")
-                && !l.contains("Emergency stop")
-                && !l.contains("Fatal error")
-                && !l.contains("==>"))
-                || l.starts_with("l.") // line-number pointer, e.g. "l.6 \begin{document}"
-        })
-        .map(|l| l.trim().to_string())
-        .collect();
-
-    // 2. If no structured errors found, read the .log file for details
-    if errors.is_empty() {
-        if let Ok(log) = std::fs::read_to_string(log_path) {
-            let mut in_error = false;
-            for line in log.lines() {
-                if line.starts_with("! ") {
-                    errors.push(line.trim().to_string());
-                    in_error = true;
-                } else if in_error {
-                    // Include continuation lines (indented)
-                    if line.starts_with("l.") || line.starts_with(' ') {
-                        errors.push(line.trim().to_string());
-                    } else {
-                        in_error = false;
-                    }
-                }
-            }
-        }
-    }
-
-    if errors.is_empty() {
-        // 3. Last resort – show the tail of the log
-        if let Ok(log) = std::fs::read_to_string(log_path) {
-            let tail: Vec<&str> = log.lines().rev().take(15).collect();
-            let tail: Vec<&str> = tail.into_iter().rev().collect();
-            errors = tail
-                .iter()
-                .filter(|l| {
-                    !l.is_empty()
-                        && !l.contains("Transcript written")
-                        && !l.contains("Output written")
-                        && !l.starts_with('(')
-                        && !l.starts_with(')')
-                })
-                .take(5)
-                .map(|l| l.to_string())
-                .collect();
-        }
-    }
-
-    if errors.is_empty() {
-        errors.push("Compilation failed. Check your LaTeX syntax.".into());
-    }
-
-    errors.truncate(8);
-    errors
 }

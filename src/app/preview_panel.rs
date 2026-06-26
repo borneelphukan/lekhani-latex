@@ -19,43 +19,43 @@ impl App {
             
             let btn_size = egui::vec2(28.0, 28.0);
 
-            if ui.add_sized(btn_size, egui::Button::new("−")).clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("−")).clicked() {
                 new_zoom = (zoom - 0.25).max(0.25);
             }
             ui.label(format!("{}%", (zoom * 100.0) as u32));
-            if ui.add_sized(btn_size, egui::Button::new("+")).clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("+")).clicked() {
                 new_zoom = (zoom + 0.25).min(4.0);
             }
             ui.separator();
             
             let has_next = num_pages.map_or(true, |n| page + 1 < n);
             ui.add_enabled_ui(has_next, |ui| {
-                if ui.add_sized(btn_size, egui::Button::new("\u{25B6}")).clicked() {
+                if ui.add_sized(btn_size, crate::components::button::icon("\u{25B6}")).clicked() {
                     new_page = page + 1;
                 }
             });
             ui.label(format!("Page {}", page + 1));
             let has_prev = page > 0;
             ui.add_enabled_ui(has_prev, |ui| {
-                if ui.add_sized(btn_size, egui::Button::new("\u{25C0}")).clicked() {
+                if ui.add_sized(btn_size, crate::components::button::icon("\u{25C0}")).clicked() {
                     new_page = page.saturating_sub(1);
                 }
             });
             ui.separator();
             
-            if ui.add_sized(btn_size, egui::Button::new("\u{25C0}")).on_hover_text("Left").clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("\u{25C0}")).on_hover_text("Left").clicked() {
                 let offset = self.active_tab().scroll_offset;
                 self.active_tab_mut().scroll_request = Some(egui::vec2(offset.x - 50.0, offset.y));
             }
-            if ui.add_sized(btn_size, egui::Button::new("\u{25B6}")).on_hover_text("Right").clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("\u{25B6}")).on_hover_text("Right").clicked() {
                 let offset = self.active_tab().scroll_offset;
                 self.active_tab_mut().scroll_request = Some(egui::vec2(offset.x + 50.0, offset.y));
             }
-            if ui.add_sized(btn_size, egui::Button::new("\u{25B2}")).on_hover_text("Up").clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("\u{25B2}")).on_hover_text("Up").clicked() {
                 let offset = self.active_tab().scroll_offset;
                 self.active_tab_mut().scroll_request = Some(egui::vec2(offset.x, offset.y - 50.0));
             }
-            if ui.add_sized(btn_size, egui::Button::new("\u{25BC}")).on_hover_text("Down").clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("\u{25BC}")).on_hover_text("Down").clicked() {
                 let offset = self.active_tab().scroll_offset;
                 self.active_tab_mut().scroll_request = Some(egui::vec2(offset.x, offset.y + 50.0));
             }
@@ -72,10 +72,10 @@ impl App {
             ui.separator();
             
             let mut pan_mode = self.active_tab().preview.pan_mode;
-            if ui.add_sized(btn_size, egui::Button::new("↖").selected(!pan_mode)).clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("↖").selected(!pan_mode)).clicked() {
                 pan_mode = false;
             }
-            if ui.add_sized(btn_size, egui::Button::new("✋").selected(pan_mode)).clicked() {
+            if ui.add_sized(btn_size, crate::components::button::icon("✋").selected(pan_mode)).clicked() {
                 pan_mode = true;
             }
             self.active_tab_mut().preview.pan_mode = pan_mode;

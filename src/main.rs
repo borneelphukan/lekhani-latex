@@ -7,6 +7,7 @@ mod completions;
 mod lexer;
 mod preview;
 mod types;
+mod components;
 
 fn load_icon() -> Option<egui::IconData> {
     let img = image::open("assets/logo.png").ok()?;
@@ -20,7 +21,16 @@ fn load_icon() -> Option<egui::IconData> {
 }
 
 fn main() -> Result<(), eframe::Error> {
+    #[cfg(target_os = "linux")]
+    {
+        // Silence Mesa / libEGL driver loader warnings to stderr
+        if std::env::var("MESA_LOG_FILE").is_err() {
+            std::env::set_var("MESA_LOG_FILE", "/dev/null");
+        }
+    }
+
     let icon = load_icon();
+
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 860.0])
         .with_title("Lekhani Latex")

@@ -40,12 +40,12 @@ impl App {
                         Some(super::FileDialogAction::Open);
                 }
                 let has_tabs = !self.tabs.is_empty();
-                if ui.add_enabled(has_tabs, egui::Button::new("Save")).clicked() {
+                if ui.add_enabled(has_tabs, crate::components::button::standard("Save")).clicked() {
                     ui.close();
                     self.file_dialog_action =
                         Some(super::FileDialogAction::Save);
                 }
-                if ui.add_enabled(has_tabs, egui::Button::new("Save As…")).clicked() {
+                if ui.add_enabled(has_tabs, crate::components::button::standard("Save As…")).clicked() {
                     ui.close();
                     self.file_dialog_action =
                         Some(super::FileDialogAction::SaveAs);
@@ -60,7 +60,7 @@ impl App {
 
             let has_tabs = !self.tabs.is_empty();
             ui.menu_button("View", |ui| {
-                if ui.add_enabled(has_tabs, egui::Button::new("Toggle Preview")).clicked() {
+                if ui.add_enabled(has_tabs, crate::components::button::standard("Toggle Preview")).clicked() {
                     ui.close();
                     let tab = self.active_tab_mut();
                     tab.show_preview = !tab.show_preview;
@@ -75,7 +75,7 @@ impl App {
                     if fs && ui.visuals().dark_mode {
                         ui.visuals_mut().selection.bg_fill = egui::Color32::from_rgb(60, 60, 60);
                     }
-                    if ui.add(egui::Button::selectable(fs, "\u{26F6} Fullscreen    F12")).clicked() {
+                    if ui.add(crate::components::button::standard("\u{26F6} Fullscreen    F12").selected(fs)).clicked() {
                         ui.close();
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
                     }
@@ -109,6 +109,25 @@ impl App {
         if self.tabs.is_empty() {
             return;
         }
+        
+        let mut cmd = std::process::Command::new("pdflatex");
+        cmd.arg("--version");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        
+        let is_missing = match cmd.output() {
+            Ok(output) => !output.status.success(),
+            Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+        };
+        
+        if is_missing {
+            self.show_compiler_dialog = true;
+            return;
+        }
+
         let tab = self.active_tab_mut();
         tab.show_preview = true;
         let path = tab.buffer.path().map(|p| p.to_path_buf());

@@ -35,10 +35,21 @@ enum UpdateState {
     Downloading(f32),
 }
 
+#[derive(Clone)]
+enum CompilerDownloadState {
+    None,
+    Downloading(f32),
+    Complete,
+    Failed(String),
+}
+
 enum UpdateMessage {
     CheckResult(bool, Option<String>),
     DownloadProgress(f32),
     DownloadComplete(Result<String, String>),
+    CompilerDownloadProgress(f32),
+    CompilerDownloadComplete(Result<PathBuf, String>),
+    OsThemeChanged(egui::Theme),
 }
 
 pub struct App {
@@ -68,7 +79,12 @@ pub struct App {
     llm_rx: std::sync::mpsc::Receiver<Result<String, String>>,
     llm_api_key: String,
     llm_provider: String,
+    llm_api_key_error: Option<String>,
     show_llm_settings: bool,
+    os_theme: Option<egui::Theme>,
+    startup_compiler_checked: bool,
+    show_compiler_dialog: bool,
+    compiler_download_state: CompilerDownloadState,
 }
 
 enum FileDialogAction {
@@ -109,7 +125,12 @@ impl App {
             llm_rx,
             llm_api_key: std::env::var("LLM_API_KEY").unwrap_or_default(),
             llm_provider: "OpenAI".to_string(),
+            llm_api_key_error: None,
             show_llm_settings: false,
+            os_theme: None,
+            startup_compiler_checked: false,
+            show_compiler_dialog: false,
+            compiler_download_state: CompilerDownloadState::None,
         };
 
         let mut args = std::env::args().skip(1);
@@ -123,6 +144,39 @@ impl App {
         }
 
         app.apply_theme(cc.egui_ctx.clone());
+
+        #[cfg(target_os = "linux")]
+        {
+            let tx = app.update_tx.clone();
+            let ctx = cc.egui_ctx.clone();
+            std::thread::spawn(move || {
+                let mut last_theme = None;
+                loop {
+                    if let Ok(output) = std::process::Command::new("gsettings")
+                        .args(&["get", "org.gnome.desktop.interface", "color-scheme"])
+                        .output()
+                    {
+                        let s = String::from_utf8_lossy(&output.stdout);
+                        let current = if s.contains("prefer-dark") {
+                            Some(egui::Theme::Dark)
+                        } else if s.contains("prefer-light") || s.contains("default") {
+                            Some(egui::Theme::Light)
+                        } else {
+                            None
+                        };
+                        
+                        if current != last_theme {
+                            last_theme = current;
+                            if let Some(t) = current {
+                                let _ = tx.send(UpdateMessage::OsThemeChanged(t));
+                                ctx.request_repaint();
+                            }
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            });
+        }
 
         // Add Hack as fallback for Proportional to support Geometric Shapes (▲▼)
         // Ubuntu-Light and NotoEmoji lack U+25B2/U+25BC but Hack has full coverage.
@@ -146,8 +200,14 @@ impl App {
     }
 
     fn apply_theme(&self, ctx: egui::Context) {
-        let system_theme = ctx.system_theme();
-        let is_dark = system_theme == Some(egui::Theme::Dark) || system_theme.is_none();
+        let is_dark = match self.theme {
+            crate::types::Theme::Dark => true,
+            crate::types::Theme::Light => false,
+            crate::types::Theme::System => {
+                let sys = self.os_theme.or_else(|| ctx.system_theme());
+                sys == Some(egui::Theme::Dark) || sys.is_none()
+            }
+        };
         let mut style = (*ctx.global_style()).clone();
         if is_dark {
             style.visuals = egui::Visuals::dark();
@@ -217,8 +277,13 @@ impl App {
                     CompileEvent::Failure(errors) => {
                         tab.compile_start_time.take();
                         tab.status_message = "Compilation failed".into();
-                        tab.error_message = Some(errors.join("\n"));
+                        let error_text = errors.join("\n");
+                        tab.error_message = Some(error_text.clone());
                         tab.output_log.clear();
+
+                        if error_text.contains("was not found. Is a LaTeX distribution (MiKTeX/TeX Live) installed?") {
+                            self.show_compiler_dialog = true;
+                        }
                         let re_line = error_line_regex();
                         let mut all_error_lines: Vec<usize> = Vec::new();
                         let mut j = 0;
@@ -330,6 +395,23 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if !self.startup_compiler_checked {
+            self.startup_compiler_checked = true;
+            let mut cmd = std::process::Command::new("pdflatex");
+            cmd.arg("--version");
+            #[cfg(windows)]
+            cmd.creation_flags(0x08000000);
+            
+            let is_missing = match cmd.output() {
+                Ok(output) => !output.status.success(),
+                Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+            };
+            
+            if is_missing {
+                self.show_compiler_dialog = true;
+            }
+        }
+
         self.apply_theme(ui.ctx().clone());
 
         self.process_update_messages();
@@ -470,13 +552,17 @@ impl eframe::App for App {
                         "Create a new document or open an existing one to get started.",
                     );
                     ui.add_space(12.0);
-                    if ui.button("  New Document  ").clicked() {
-                        self.new_document();
-                    }
-                    ui.add_space(4.0);
-                    if ui.button("  Open File  ").clicked() {
-                        self.open_file();
-                    }
+                    ui.scope(|ui| {
+                        ui.style_mut().text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
+                        ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
+                        if ui.add(crate::components::button::standard("New Document")).clicked() {
+                            self.new_document();
+                        }
+                        ui.add_space(4.0);
+                        if ui.add(crate::components::button::standard("Open File")).clicked() {
+                            self.open_file();
+                        }
+                    });
                 });
                 return;
             }
@@ -622,6 +708,7 @@ impl eframe::App for App {
 
         self.ui_update_dialog(ui);
         self.llm_settings_dialog(ui.ctx());
+        self.compiler_dialog_ui(ui.ctx());
     }
 
     fn on_exit(&mut self) {
@@ -782,45 +869,199 @@ impl App {
                         Err(_) => {}
                     }
                 }
+                UpdateMessage::CompilerDownloadProgress(progress) => {
+                    self.compiler_download_state = CompilerDownloadState::Downloading(progress);
+                }
+                UpdateMessage::OsThemeChanged(theme) => {
+                    self.os_theme = Some(theme);
+                }
+                UpdateMessage::CompilerDownloadComplete(result) => {
+                    match result {
+                        Ok(path) => {
+                            self.compiler_download_state = CompilerDownloadState::Complete;
+                            
+                            // Launch the installer
+                            #[cfg(target_os = "windows")]
+                            {
+                                let _ = std::process::Command::new(&path).spawn();
+                            }
+                            #[cfg(target_os = "linux")]
+                            {
+                                // Provide a command to run or run it in terminal
+                                // For tar.gz, we just show a message, or try to run it via terminal
+                                let extract_dir = path.parent().unwrap_or(std::path::Path::new("/tmp"));
+                                let cmd = format!(
+                                    "cd {} && tar xzf {} && cd install-tl-* && sudo ./install-tl",
+                                    extract_dir.display(),
+                                    path.display()
+                                );
+                                
+                                let terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "xterm"];
+                                for term in terminals {
+                                    let mut spawn_cmd = std::process::Command::new(term);
+                                    if term == "gnome-terminal" {
+                                        spawn_cmd.args(&["--", "bash", "-c", &format!("{}; read -p '\nPress enter to close...'", cmd)]);
+                                    } else {
+                                        spawn_cmd.args(&["-e", "bash", "-c", &format!("{}; read -p '\nPress enter to close...'", cmd)]);
+                                    }
+                                    
+                                    if spawn_cmd.spawn().is_ok() {
+                                        break;
+                                    }
+                                }
+                            }
+                            #[cfg(target_os = "macos")]
+                            {
+                                let _ = std::process::Command::new("open").arg(&path).spawn();
+                            }
+                        }
+                        Err(err) => {
+                            self.compiler_download_state = CompilerDownloadState::Failed(err);
+                        }
+                    }
+                }
             }
         }
     }
 
+    fn validate_api_key(provider: &str, key: &str) -> Result<(), &'static str> {
+        let key = key.trim();
+        if key.is_empty() {
+            return Err("API key cannot be empty");
+        }
+        match provider {
+            "OpenAI" => {
+                if !key.starts_with("sk-") {
+                    return Err("OpenAI API key must start with 'sk-'");
+                }
+            }
+            "Anthropic" => {
+                if !key.starts_with("sk-ant-") {
+                    return Err("Anthropic API key must start with 'sk-ant-'");
+                }
+            }
+            "Gemini" => {
+                if !key.starts_with("AIza") {
+                    return Err("Gemini API key must start with 'AIza'");
+                }
+            }
+            "Mistral" | "Cohere" | "Custom" => {
+                if key.len() < 8 {
+                    return Err("API key seems too short");
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn llm_settings_dialog(&mut self, ctx: &egui::Context) {
         let mut open = self.show_llm_settings;
-        egui::Window::new("Integrate LLM")
+        let mut close_requested = false;
+        egui::Window::new("llm_settings_dialog")
+            .title_bar(false)
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .frame(
+                egui::Frame::window(&ctx.global_style())
+                    .inner_margin(egui::Margin { left: 24, right: 24, top: 16, bottom: 24 })
+                    .corner_radius(8),
+            )
             .show(ctx, |ui| {
+                ui.style_mut().text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
+                ui.style_mut().text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
+                ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
+                
                 ui.horizontal(|ui| {
-                    ui.label("Provider:");
-                    egui::ComboBox::from_id_salt("llm_provider_combo")
-                        .selected_text(&self.llm_provider)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.llm_provider, "OpenAI".to_string(), "OpenAI");
-                            ui.selectable_value(&mut self.llm_provider, "Anthropic".to_string(), "Anthropic");
-                            ui.selectable_value(&mut self.llm_provider, "Custom".to_string(), "Custom");
-                        });
+                    ui.heading(egui::RichText::new("Integrate LLM").strong().size(20.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(crate::components::button::borderless("✖")).clicked() {
+                            close_requested = true;
+                        }
+                    });
                 });
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label("API Key:");
-                    ui.add(egui::TextEdit::singleline(&mut self.llm_api_key)
-                        .password(true)
-                        .desired_width(200.0));
-                });
+                ui.separator();
+                ui.add_space(16.0);
+
+                egui::Grid::new("llm_settings_grid")
+                    .num_columns(2)
+                    .spacing([24.0, 24.0])
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.add_space(8.0);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                ui.label("Provider:");
+                            });
+                        });
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            let old_provider = self.llm_provider.clone();
+                            crate::components::dropdown::dropdown("llm_provider_combo", &self.llm_provider)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut self.llm_provider, "OpenAI".to_string(), "OpenAI");
+                                    ui.selectable_value(&mut self.llm_provider, "Anthropic".to_string(), "Anthropic");
+                                    ui.selectable_value(&mut self.llm_provider, "Gemini".to_string(), "Gemini");
+                                    ui.selectable_value(&mut self.llm_provider, "Mistral".to_string(), "Mistral");
+                                    ui.selectable_value(&mut self.llm_provider, "Cohere".to_string(), "Cohere");
+                                    ui.selectable_value(&mut self.llm_provider, "Custom".to_string(), "Custom");
+                                });
+                            if old_provider != self.llm_provider {
+                                self.llm_api_key_error = None;
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.vertical(|ui| {
+                            ui.add_space(10.0);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                ui.label("API Key:");
+                            });
+                        });
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add(crate::components::textfield::password(&mut self.llm_api_key)
+                                .margin(egui::vec2(12.0, 10.0))
+                                .desired_width(320.0));
+                        });
+                        ui.end_row();
+                    });
+
+                ui.add_space(16.0);
+                if let Some(err) = &self.llm_api_key_error {
+                    ui.label(egui::RichText::new(err).color(egui::Color32::RED));
+                    ui.add_space(8.0);
+                }
+                ui.separator();
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Add").clicked() {
-                        self.show_llm_settings = false;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        self.show_llm_settings = false;
-                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Add").clicked() {
+                            match Self::validate_api_key(&self.llm_provider, &self.llm_api_key) {
+                                Ok(_) => {
+                                    self.llm_api_key_error = None;
+                                    close_requested = true;
+                                }
+                                Err(e) => {
+                                    self.llm_api_key_error = Some(e.to_string());
+                                }
+                            }
+                        }
+                        ui.add_space(16.0);
+                        if ui.button("Cancel").clicked() {
+                            self.llm_api_key_error = None;
+                            close_requested = true;
+                        }
+                    });
                 });
             });
-        self.show_llm_settings = open;
+            
+        if close_requested {
+            self.show_llm_settings = false;
+        } else {
+            self.show_llm_settings = open;
+        }
     }
     fn ui_update_dialog(&mut self, ui: &mut egui::Ui) {
         match self.update_state.clone() {
@@ -1107,7 +1348,7 @@ impl App {
                             if ui
                                 .put(
                                     close_rect,
-                                    egui::Button::new(egui::RichText::new("×").size(13.0))
+                                    crate::components::button::standard(egui::RichText::new("×").size(13.0))
                                         .frame(false),
                                 )
                                 .clicked()
@@ -1240,5 +1481,211 @@ impl App {
                         }
                     });
             });
+    }
+
+    fn compiler_dialog_ui(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_compiler_dialog;
+        let mut close_requested = false;
+        
+        egui::Window::new("compiler_dialog_ui")
+            .title_bar(false)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .frame(
+                egui::Frame::window(&ctx.global_style())
+                    .inner_margin(egui::Margin { left: 24, right: 24, top: 16, bottom: 24 })
+                    .corner_radius(8),
+            )
+            .show(ctx, |ui| {
+                ui.style_mut().text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
+                ui.style_mut().text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
+                ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
+
+                ui.horizontal(|ui| {
+                    ui.heading(egui::RichText::new("Missing LaTeX Compiler").strong().size(20.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(crate::components::button::borderless("✖")).clicked() {
+                            close_requested = true;
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(16.0);
+
+                ui.vertical_centered(|ui| {
+                    ui.label("The LaTeX compiler (pdflatex) was not found on your system.");
+                    ui.add_space(8.0);
+                    ui.label("Would you like to download and install the recommended TeX Live package (medium scheme)?");
+                    ui.add_space(24.0);
+                    
+                    match &self.compiler_download_state {
+                        CompilerDownloadState::None => {}
+                        CompilerDownloadState::Downloading(progress) => {
+                            ui.label("Downloading installer...");
+                            ui.add_space(16.0);
+                            
+                            let rect = ui.available_rect_before_wrap();
+                            let size = egui::vec2(rect.width(), 20.0);
+                            let (_rect, _response) = ui.allocate_exact_size(size, egui::Sense::hover());
+                            let corner_radius = egui::CornerRadius::same(4);
+                            ui.painter().rect_filled(
+                                _rect,
+                                corner_radius,
+                                ui.visuals().extreme_bg_color,
+                            );
+                            let fill_width = _rect.width() * *progress;
+                            if fill_width > 0.0 {
+                                let fill_rect = egui::Rect::from_min_size(
+                                    _rect.min,
+                                    egui::vec2(fill_width, _rect.height()),
+                                );
+                                ui.painter().rect_filled(
+                                    fill_rect,
+                                    corner_radius,
+                                    ui.visuals().selection.bg_fill,
+                                );
+                            }
+                            ui.painter().text(
+                                _rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                format!("{:.0}%", *progress * 100.0),
+                                egui::FontId::proportional(14.0),
+                                ui.visuals().text_color(),
+                            );
+                        }
+                        CompilerDownloadState::Complete => {
+                            ui.label(egui::RichText::new("Download complete! Launching installer...").color(egui::Color32::from_rgb(60, 180, 75)));
+                        }
+                        CompilerDownloadState::Failed(err) => {
+                            ui.label(egui::RichText::new(format!("Download failed: {}", err)).color(egui::Color32::from_rgb(220, 60, 60)));
+                        }
+                    }
+                });
+
+                match &self.compiler_download_state {
+                    CompilerDownloadState::Downloading(_) => {}
+                    CompilerDownloadState::None => {
+                        ui.add_space(16.0);
+                        ui.separator();
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("Download").clicked() {
+                                    self.start_compiler_download();
+                                }
+                                ui.add_space(16.0);
+                                if ui.button("Cancel").clicked() {
+                                    close_requested = true;
+                                }
+                            });
+                        });
+                    }
+                    CompilerDownloadState::Complete => {
+                        ui.add_space(16.0);
+                        ui.separator();
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("Close").clicked() {
+                                    close_requested = true;
+                                }
+                            });
+                        });
+                    }
+                    CompilerDownloadState::Failed(_) => {
+                        ui.add_space(24.0);
+                        ui.separator();
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("Retry").clicked() {
+                                    self.start_compiler_download();
+                                }
+                                ui.add_space(16.0);
+                                if ui.button("Cancel").clicked() {
+                                    close_requested = true;
+                                }
+                            });
+                        });
+                    }
+                }
+            });
+            
+        if close_requested || !open {
+            self.show_compiler_dialog = false;
+            if close_requested {
+                self.compiler_download_state = CompilerDownloadState::None;
+            }
+        }
+    }
+    
+    fn start_compiler_download(&mut self) {
+        self.compiler_download_state = CompilerDownloadState::Downloading(0.0);
+        let tx = self.update_tx.clone();
+        
+        std::thread::spawn(move || {
+            #[cfg(target_os = "windows")]
+            let url = "https://mirror.ctan.org/systems/windows/protext/protext-3.2-021024.zip";
+            #[cfg(target_os = "linux")]
+            let url = "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz";
+            #[cfg(target_os = "macos")]
+            let url = "https://mirror.ctan.org/systems/mac/mactex/mactex-basic.pkg";
+            
+            match ureq::get(url).header("User-Agent", "lekhani-latex").call() {
+                Ok(response) => {
+                    let len: Option<u64> = response
+                        .headers()
+                        .get("Content-Length")
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse().ok());
+                        
+                    let mut reader = response.into_body().into_reader();
+                    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+                    
+                    #[cfg(target_os = "windows")]
+                    let file_name = "protext.zip";
+                    #[cfg(target_os = "linux")]
+                    let file_name = "install-tl-unx.tar.gz";
+                    #[cfg(target_os = "macos")]
+                    let file_name = "mactex-basic.pkg";
+                    
+                    let out_path = download_dir.join(file_name);
+                    
+                    if let Ok(mut file) = std::fs::File::create(&out_path) {
+                        use std::io::Read;
+                        let mut buf = [0; 8192];
+                        let mut downloaded = 0;
+                        loop {
+                            match reader.read(&mut buf) {
+                                Ok(0) => break,
+                                Ok(n) => {
+                                    use std::io::Write;
+                                    let _ = file.write_all(&buf[..n]);
+                                    downloaded += n as u64;
+                                    if let Some(total) = len {
+                                        let progress = (downloaded as f32) / (total as f32);
+                                        let _ = tx.send(UpdateMessage::CompilerDownloadProgress(progress));
+                                    }
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(format!("Network error: {}", e))));
+                                    return;
+                                }
+                            }
+                        }
+                        let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Ok(out_path)));
+                    } else {
+                        let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err("Failed to save file. Check disk permissions.".into())));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(format!("Connection failed: {}", e))));
+                }
+            }
+        });
     }
 }
