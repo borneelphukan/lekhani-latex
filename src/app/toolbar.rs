@@ -30,6 +30,28 @@ impl App {
                 self.trigger_compile();
             }
 
+            ui.add_space(8.0);
+            
+            let llm_btn_text = if self.llm_correction_in_progress {
+                "  \u{23F3}  Correcting…  "
+            } else {
+                "  \u{2728}  Correct Syntax  "
+            };
+            
+            let llm_btn = egui::Button::new(llm_btn_text)
+                .min_size(egui::vec2(110.0, 26.0))
+                .fill(match resolved {
+                    Theme::Dark => Color32::from_rgb(120, 60, 120),
+                    Theme::Light => Color32::from_rgb(160, 80, 160),
+                    Theme::System => unreachable!(),
+                });
+                
+            let llm_enabled = !self.tabs.is_empty() && !self.llm_correction_in_progress;
+            let resp_llm = ui.add_enabled(llm_enabled, llm_btn);
+            if resp_llm.clicked() {
+                self.trigger_llm_correction();
+            }
+
             ui.separator();
 
             ui.checkbox(&mut self.auto_compile, "Auto-compile");

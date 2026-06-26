@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Lekhani Latex
+Comment=A modern, easy-to-use LaTeX editor with live preview
+Exec=lekhani-latex
+Icon=lekhani-latex
+Terminal=false
+Categories=Office;Publishing;Utility;TextEditor;

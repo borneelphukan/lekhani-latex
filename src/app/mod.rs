@@ -63,6 +63,12 @@ pub struct App {
     last_auto_compile: Option<Instant>,
     last_content_change: Option<Instant>,
     tab_drag: Option<(usize, f32)>,
+    llm_correction_in_progress: bool,
+    llm_tx: std::sync::mpsc::Sender<Result<String, String>>,
+    llm_rx: std::sync::mpsc::Receiver<Result<String, String>>,
+    llm_api_key: String,
+    llm_provider: String,
+    show_llm_settings: bool,
 }
 
 enum FileDialogAction {
@@ -75,6 +81,7 @@ enum FileDialogAction {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (update_tx, update_rx) = std::sync::mpsc::channel::<UpdateMessage>();
+        let (llm_tx, llm_rx) = std::sync::mpsc::channel::<Result<String, String>>();
         let mut app = Self {
             tabs: Vec::new(),
             active_tab: 0,
@@ -97,6 +104,12 @@ impl App {
             last_auto_compile: None,
             last_content_change: None,
             tab_drag: None,
+            llm_correction_in_progress: false,
+            llm_tx,
+            llm_rx,
+            llm_api_key: std::env::var("LLM_API_KEY").unwrap_or_default(),
+            llm_provider: "OpenAI".to_string(),
+            show_llm_settings: false,
         };
 
         let mut args = std::env::args().skip(1);
@@ -166,6 +179,7 @@ impl App {
                     CompileEvent::Started => {
                         tab.status_message = "Compiling…".into();
                         tab.compile_start_time = Some(std::time::Instant::now());
+                        tab.show_preview = true;
                     }
                     CompileEvent::Warnings(warnings) => {
                         for w in &warnings {
@@ -195,6 +209,7 @@ impl App {
                         tab.preview.page = 0;
                         tab.preview.num_pages = None;
                         tab.preview.rendered_pages.clear();
+                        tab.preview.active_renders.clear();
                         tab.preview_textures.clear();
                         tab.preview.ensure_page_rendered(&pdf_path, 0);
                         self.show_outputs_requested = true;
@@ -259,7 +274,7 @@ impl App {
                     PreviewEvent::NewImage(_page, _color_image) => {
                         // Handled by update_preview_textures because it needs context
                     }
-                    PreviewEvent::Error(e) => {
+                    PreviewEvent::Error(_page, e) => {
                         // For simplicity, just log or set error if the currently viewed page failed
                         tab.preview.render_error = Some(e);
                     }
@@ -270,6 +285,28 @@ impl App {
                         );
                         tab.preview.open_externally();
                         tab.status_message = "PDF opened in external viewer".into();
+                    }
+                }
+            }
+        }
+
+        while let Ok(result) = self.llm_rx.try_recv() {
+            self.llm_correction_in_progress = false;
+            if !self.tabs.is_empty() {
+                let tab = self.active_tab_mut();
+                match result {
+                    Ok(new_text) => {
+                        tab.buffer.replace_all(&new_text);
+                        tab.status_message = "Syntax corrected via LLM".into();
+                    }
+                    Err(err) => {
+                        tab.error_message = Some(err.clone());
+                        tab.output_log.clear();
+                        tab.output_log.push((
+                            format!("× LLM Error: {}", err),
+                            Color32::from_rgb(220, 60, 60),
+                        ));
+                        self.show_outputs_requested = true;
                     }
                 }
             }
@@ -584,6 +621,7 @@ impl eframe::App for App {
         }
 
         self.ui_update_dialog(ui);
+        self.llm_settings_dialog(ui.ctx());
     }
 
     fn on_exit(&mut self) {
@@ -712,16 +750,16 @@ impl App {
     fn process_update_messages(&mut self) {
         while let Ok(msg) = self.update_rx.try_recv() {
             match msg {
-                UpdateMessage::CheckResult(is_available, version) => {
-                    if is_available {
+                UpdateMessage::CheckResult(available, version) => {
+                    if available {
                         self.update_state =
-                            UpdateState::Prompt(version.unwrap_or_else(|| "unknown".into()));
+                            UpdateState::Prompt(version.unwrap_or_else(|| "Unknown".into()));
                     } else {
                         self.update_state = UpdateState::None;
                         rfd::MessageDialog::new()
-                            .set_title("No Update")
+                            .set_title("No Updates")
                             .set_description("No update available.")
-                            .set_level(rfd::MessageLevel::Warning)
+                            .set_buttons(rfd::MessageButtons::Ok)
                             .show();
                     }
                 }
@@ -748,6 +786,42 @@ impl App {
         }
     }
 
+    fn llm_settings_dialog(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_llm_settings;
+        egui::Window::new("Integrate LLM")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Provider:");
+                    egui::ComboBox::from_id_salt("llm_provider_combo")
+                        .selected_text(&self.llm_provider)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.llm_provider, "OpenAI".to_string(), "OpenAI");
+                            ui.selectable_value(&mut self.llm_provider, "Anthropic".to_string(), "Anthropic");
+                            ui.selectable_value(&mut self.llm_provider, "Custom".to_string(), "Custom");
+                        });
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("API Key:");
+                    ui.add(egui::TextEdit::singleline(&mut self.llm_api_key)
+                        .password(true)
+                        .desired_width(200.0));
+                });
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Add").clicked() {
+                        self.show_llm_settings = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_llm_settings = false;
+                    }
+                });
+            });
+        self.show_llm_settings = open;
+    }
     fn ui_update_dialog(&mut self, ui: &mut egui::Ui) {
         match self.update_state.clone() {
             UpdateState::None => {}
