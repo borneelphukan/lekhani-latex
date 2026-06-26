@@ -27,7 +27,7 @@ assets = [
     { source = "assets/logo.png", dest = "/usr/share/icons/hicolor/256x256/apps/lekhani-latex.png", mode = "0644" },
     { source = "assets/lekhani-latex.desktop", dest = "/usr/share/applications/lekhani-latex.desktop", mode = "0644" }
 ]
-requires = ["texlive-pdftex", "poppler-utils"]
+requires = "texlive-pdftex, poppler-utils"
 
 [package.metadata.deb]
 maintainer = "Borneel Bikash Phukan"
