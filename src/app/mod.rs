@@ -1,8 +1,5 @@
 pub mod tab;
-mod toolbar;
-mod menubar;
-mod statusbar;
-mod preview_panel;
+pub mod layout;
 mod editor;
 
 use std::path::PathBuf;
@@ -49,7 +46,21 @@ enum UpdateMessage {
     DownloadComplete(Result<String, String>),
     CompilerDownloadProgress(f32),
     CompilerDownloadComplete(Result<PathBuf, String>),
+    #[allow(dead_code)]
     OsThemeChanged(egui::Theme),
+    PackageInstalled(String, Result<(), String>),
+}
+
+#[derive(Clone, Debug)]
+pub enum LlmAction {
+    Correction { text: String, line: Option<usize>, explanation: Option<String> },
+    InstallPackage { package: String, explanation: Option<String> },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OutputPanelTab {
+    Compiler,
+    AI,
 }
 
 pub struct App {
@@ -75,9 +86,10 @@ pub struct App {
     last_content_change: Option<Instant>,
     tab_drag: Option<(usize, f32)>,
     llm_correction_in_progress: bool,
-    llm_tx: std::sync::mpsc::Sender<Result<String, String>>,
-    llm_rx: std::sync::mpsc::Receiver<Result<String, String>>,
+    llm_tx: std::sync::mpsc::Sender<Result<LlmAction, String>>,
+    llm_rx: std::sync::mpsc::Receiver<Result<LlmAction, String>>,
     llm_api_key: String,
+    has_saved_llm_key: bool,
     llm_provider: String,
     llm_api_key_error: Option<String>,
     show_llm_settings: bool,
@@ -85,6 +97,7 @@ pub struct App {
     startup_compiler_checked: bool,
     show_compiler_dialog: bool,
     compiler_download_state: CompilerDownloadState,
+    output_panel_tab: OutputPanelTab,
 }
 
 enum FileDialogAction {
@@ -97,7 +110,7 @@ enum FileDialogAction {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (update_tx, update_rx) = std::sync::mpsc::channel::<UpdateMessage>();
-        let (llm_tx, llm_rx) = std::sync::mpsc::channel::<Result<String, String>>();
+        let (llm_tx, llm_rx) = std::sync::mpsc::channel::<Result<LlmAction, String>>();
         let mut app = Self {
             tabs: Vec::new(),
             active_tab: 0,
@@ -123,7 +136,8 @@ impl App {
             llm_correction_in_progress: false,
             llm_tx,
             llm_rx,
-            llm_api_key: std::env::var("LLM_API_KEY").unwrap_or_default(),
+            llm_api_key: String::new(),
+            has_saved_llm_key: false,
             llm_provider: "OpenAI".to_string(),
             llm_api_key_error: None,
             show_llm_settings: false,
@@ -131,7 +145,13 @@ impl App {
             startup_compiler_checked: false,
             show_compiler_dialog: false,
             compiler_download_state: CompilerDownloadState::None,
+            output_panel_tab: OutputPanelTab::Compiler,
         };
+
+        let (initial_key, has_saved) = Self::load_initial_api_key();
+        app.llm_api_key = initial_key;
+        app.has_saved_llm_key = has_saved;
+        app.theme = Self::load_theme();
 
         let mut args = std::env::args().skip(1);
         if let Some(file_path) = args.next() {
@@ -191,6 +211,119 @@ impl App {
         app
     }
 
+    fn get_llm_config_path() -> Option<std::path::PathBuf> {
+        dirs::config_dir().map(|mut p| {
+            p.push("lekhani-latex");
+            p.push("llm_config.json");
+            p
+        })
+    }
+
+    fn get_app_config_path() -> Option<std::path::PathBuf> {
+        dirs::config_dir().map(|mut p| {
+            p.push("lekhani-latex");
+            p.push("config.json");
+            p
+        })
+    }
+
+    fn read_app_config() -> serde_json::Value {
+        let mut config = serde_json::json!({});
+        if let Some(path) = Self::get_app_config_path() {
+            if path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(json) = serde_json::from_str(&content) {
+                        config = json;
+                    }
+                }
+            } else if let Some(old_path) = Self::get_llm_config_path() {
+                if old_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&old_path) {
+                        if let Ok(json) = serde_json::from_str(&content) {
+                            config = json;
+                            if let Some(parent) = path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap_or_default());
+                            let _ = std::fs::remove_file(old_path);
+                        }
+                    }
+                }
+            }
+        }
+        config
+    }
+
+    fn write_app_config(config: &serde_json::Value) {
+        if let Some(path) = Self::get_app_config_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, serde_json::to_string_pretty(config).unwrap_or_default());
+        }
+    }
+
+    fn load_llm_api_key() -> Option<String> {
+        let config = Self::read_app_config();
+        if let Some(key) = config.get("llm_api_key").and_then(|v| v.as_str()) {
+            if !key.is_empty() {
+                return Some(key.to_string());
+            }
+        }
+        None
+    }
+
+    fn load_initial_api_key() -> (String, bool) {
+        if let Some(key) = Self::load_llm_api_key() {
+            return (key, true);
+        }
+        if let Ok(key) = std::env::var("LLM_API_KEY") {
+            if !key.is_empty() {
+                return (key, true);
+            }
+        }
+        (String::new(), false)
+    }
+
+    fn save_llm_api_key(key: &str) {
+        let mut config = Self::read_app_config();
+        config["llm_api_key"] = serde_json::json!(key);
+        Self::write_app_config(&config);
+    }
+
+    fn remove_llm_api_key() {
+        let mut config = Self::read_app_config();
+        if let Some(obj) = config.as_object_mut() {
+            obj.remove("llm_api_key");
+        }
+        Self::write_app_config(&config);
+    }
+
+    pub fn save_theme(theme: Theme) {
+        let mut config = Self::read_app_config();
+        let theme_str = match theme {
+            Theme::System => "System",
+            Theme::Light => "Light",
+            Theme::Dark => "Dark",
+        };
+        config["theme"] = serde_json::json!(theme_str);
+        Self::write_app_config(&config);
+    }
+
+    fn load_theme() -> Theme {
+        let config = Self::read_app_config();
+        if let Some(theme_str) = config.get("theme").and_then(|v| v.as_str()) {
+            match theme_str {
+                "System" => Theme::System,
+                "Light" => Theme::Light,
+                "Dark" => Theme::Dark,
+                _ => Theme::System,
+            }
+        } else {
+            Theme::System
+        }
+    }
+
     fn active_tab(&self) -> &tab::Tab {
         &self.tabs[self.active_tab]
     }
@@ -212,8 +345,8 @@ impl App {
         if is_dark {
             style.visuals = egui::Visuals::dark();
             style.visuals.selection.bg_fill = egui::Color32::from_rgb(180, 180, 180);
-            style.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(20, 20, 25, 220);
-            style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(25, 25, 30, 220);
+            style.visuals.panel_fill = egui::Color32::from_rgb(20, 20, 25);
+            style.visuals.window_fill = egui::Color32::from_rgb(25, 25, 30);
             style.visuals.window_corner_radius = egui::CornerRadius::same(12);
             style.visuals.menu_corner_radius = egui::CornerRadius::same(8);
             style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
@@ -225,8 +358,8 @@ impl App {
             style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(65, 65, 80);
         } else {
             style.visuals = egui::Visuals::light();
-            style.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(240, 240, 240, 220);
-            style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(245, 245, 245, 220);
+            style.visuals.panel_fill = egui::Color32::from_rgb(240, 240, 240);
+            style.visuals.window_fill = egui::Color32::from_rgb(245, 245, 245);
         }
         ctx.set_global_style(style);
     }
@@ -357,13 +490,68 @@ impl App {
 
         while let Ok(result) = self.llm_rx.try_recv() {
             self.llm_correction_in_progress = false;
+            let mut set_ai_tab = false;
             if !self.tabs.is_empty() {
                 let tab = self.active_tab_mut();
                 match result {
-                    Ok(new_text) => {
-                        tab.buffer.replace_all(&new_text);
-                        tab.status_message = "Syntax corrected via LLM".into();
-                    }
+                    Ok(action) => match action {
+                        LlmAction::Correction { text, line, explanation } => {
+                            if let Some(expl) = explanation {
+                                tab.ai_output_log.push((expl, egui::Color32::from_rgb(100, 200, 100)));
+                            } else {
+                                tab.ai_output_log.push(("Correction applied successfully.".to_string(), egui::Color32::from_rgb(100, 200, 100)));
+                            }
+                            if let Some(l) = line {
+                                let lines: Vec<&str> = tab.buffer.text.lines().collect();
+                                if l > 0 && l <= lines.len() {
+                                    let mut new_text = String::new();
+                                    for (i, &old_line) in lines.iter().enumerate() {
+                                        if i == l - 1 {
+                                            new_text.push_str(&text);
+                                        } else {
+                                            new_text.push_str(old_line);
+                                        }
+                                        new_text.push('\n');
+                                    }
+                                    if new_text.ends_with('\n') && !tab.buffer.text.ends_with('\n') {
+                                        new_text.pop();
+                                    }
+                                    tab.buffer.replace_all(&new_text);
+                                }
+                            } else {
+                                tab.buffer.replace_all(&text);
+                            }
+                            tab.status_message = "Syntax corrected via LLM".into();
+                            set_ai_tab = true;
+                        }
+                        LlmAction::InstallPackage { package, explanation } => {
+                            let pkg = package;
+                            if let Some(expl) = explanation {
+                                tab.ai_output_log.push((expl, egui::Color32::from_rgb(100, 200, 100)));
+                            }
+                            tab.ai_output_log.push((format!("Attempting to install package {}...", pkg), egui::Color32::from_rgb(200, 200, 100)));
+                            tab.status_message = format!("Installing package {}...", pkg).into();
+                            let tx = self.update_tx.clone();
+                            std::thread::spawn(move || {
+                                let output = std::process::Command::new("tlmgr")
+                                    .arg("install")
+                                    .arg(&pkg)
+                                    .output();
+                                let result = match output {
+                                    Ok(o) => {
+                                        if o.status.success() {
+                                            Ok(())
+                                        } else {
+                                            Err(String::from_utf8_lossy(&o.stderr).to_string())
+                                        }
+                                    }
+                                    Err(e) => Err(e.to_string()),
+                                };
+                                let _ = tx.send(UpdateMessage::PackageInstalled(pkg, result));
+                            });
+                            set_ai_tab = true;
+                        }
+                    },
                     Err(err) => {
                         tab.error_message = Some(err.clone());
                         tab.output_log.clear();
@@ -371,9 +559,14 @@ impl App {
                             format!("× LLM Error: {}", err),
                             Color32::from_rgb(220, 60, 60),
                         ));
-                        self.show_outputs_requested = true;
+                        set_ai_tab = true;
                     }
                 }
+            }
+            if set_ai_tab {
+                self.output_panel_tab = OutputPanelTab::AI;
+                self.show_outputs_requested = true;
+                self.show_outputs = true;
             }
         }
     }
@@ -617,92 +810,74 @@ impl eframe::App for App {
                 });
         }
 
-        #[allow(deprecated)]
         if self.about_open {
             let mut about_open = self.about_open;
-            ui.ctx().show_viewport_immediate(
-                egui::ViewportId::from_hash_of("about_viewport"),
-                egui::ViewportBuilder::default()
-                    .with_title("About")
-                    .with_inner_size([700.0, 380.0])
-                    .with_resizable(false)
-                    .with_maximize_button(false)
-                    .with_minimize_button(false),
-                |ctx, _class| {
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        about_open = false;
-                    }
+            let mut close_clicked = false;
+            egui::Window::new("About")
+                .open(&mut about_open)
+                .resizable(false)
+                .collapsible(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .default_size([700.0, 380.0])
+                .min_size([700.0, 380.0])
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_size(egui::vec2(700.0, 380.0));
+                    ui.vertical(|ui| {
+                        ui.heading(egui::RichText::new("Lekhani Latex").size(24.0).strong());
 
-                    let is_light = ctx.system_theme() == Some(egui::Theme::Light);
-                    let mut style = (*ctx.global_style()).clone();
-                    if is_light {
-                        style.visuals = egui::Visuals::light();
-                    }
+                        ui.add_space(12.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(egui::RichText::new("Lekhani Latex is a modern, easy-to-use, open source LaTeX editor with live preview, syntax highlighting, and autocompletion.").size(13.0));
+                        });
 
-                    let bg_fill = if is_light { egui::Color32::from_rgb(245, 245, 245) } else { ctx.global_style().visuals.window_fill };
+                        ui.add_space(10.0);
+                        ui.label(egui::RichText::new("Copyright © 2026-Present Borneel B. Phukan.").size(12.0));
 
-                    egui::Panel::bottom("about_bottom_panel")
-                        .frame(egui::Frame::default().inner_margin(egui::Margin { left: 16, right: 16, top: 8, bottom: 16 }).fill(bg_fill))
-                        .show(ctx, |ui| {
-                            ui.set_style(style.clone());
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.hyperlink_to(egui::RichText::new("Credits").size(13.0), "https://github.com/example/lekhani-latex/credits");
+                            ui.add_space(8.0);
+                            ui.hyperlink_to(egui::RichText::new("Website").size(13.0), "https://github.com/example/lekhani-latex");
+                            ui.add_space(8.0);
+                            ui.hyperlink_to(egui::RichText::new("Release Notes").size(13.0), "https://github.com/example/lekhani-latex/releases");
+                        });
+
+                        ui.add_space(20.0);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Version Information").size(14.0).strong());
+                            if ui.button("\u{1F4CB}").on_hover_text("Copy Version Info").clicked() {
+                                let version_info = format!(
+                                    "Version: {} (Stable)\nEnvironment: OS: {} ({}); Arch: {}",
+                                    env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::FAMILY, std::env::consts::ARCH
+                                );
+                                ui.ctx().copy_text(version_info);
+                            }
+                        });
+
+                        ui.add_space(4.0);
+                        egui::Grid::new("about_version_grid").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
+                            ui.label(egui::RichText::new("Version:").size(12.0));
+                            ui.label(egui::RichText::new(format!("{} (Stable)", env!("CARGO_PKG_VERSION"))).size(12.0));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Environment:").size(12.0));
+                            ui.label(egui::RichText::new(format!("OS: {} ({}); Arch: {}", std::env::consts::OS, std::env::consts::FAMILY, std::env::consts::ARCH)).size(12.0));
+                            ui.end_row();
+                        });
+
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.button(egui::RichText::new("Close").size(14.0)).clicked() {
-                                    about_open = false;
+                                    close_clicked = true;
                                 }
                             });
                         });
-
-                    egui::CentralPanel::default()
-                        .frame(egui::Frame::default().inner_margin(16).fill(bg_fill))
-                        .show(ctx, |ui| {
-                            ui.set_style(style);
-                            ui.vertical(|ui| {
-                                ui.heading(egui::RichText::new("Lekhani Latex").size(24.0).strong());
-
-                                ui.add_space(12.0);
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.label(egui::RichText::new("Lekhani Latex is a modern, easy-to-use, open source LaTeX editor with live preview, syntax highlighting, and autocompletion.").size(13.0));
-                                });
-
-                                ui.add_space(10.0);
-                                ui.label(egui::RichText::new("Copyright © 2026-Present Borneel B. Phukan.").size(12.0));
-
-                                ui.add_space(10.0);
-                                ui.horizontal(|ui| {
-                                    ui.add_space(40.0);
-                                    ui.hyperlink_to(egui::RichText::new("Credits").size(13.0), "https://github.com/example/lekhani-latex/credits");
-                                    ui.add_space(8.0);
-                                    ui.hyperlink_to(egui::RichText::new("Website").size(13.0), "https://github.com/example/lekhani-latex");
-                                    ui.add_space(8.0);
-                                    ui.hyperlink_to(egui::RichText::new("Release Notes").size(13.0), "https://github.com/example/lekhani-latex/releases");
-                                });
-
-                                ui.add_space(20.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Version Information").size(14.0).strong());
-                                    if ui.button("\u{1F4CB}").on_hover_text("Copy Version Info").clicked() {
-                                        let version_info = format!(
-                                            "Version: {} (Stable)\nEnvironment: OS: {} ({}); Arch: {}",
-                                            env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::FAMILY, std::env::consts::ARCH
-                                        );
-                                        ctx.copy_text(version_info);
-                                    }
-                                });
-
-                                ui.add_space(4.0);
-                                egui::Grid::new("about_version_grid").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
-                                    ui.label(egui::RichText::new("Version:").size(12.0));
-                                    ui.label(egui::RichText::new(format!("{} (Stable)", env!("CARGO_PKG_VERSION"))).size(12.0));
-                                    ui.end_row();
-
-                                    ui.label(egui::RichText::new("Environment:").size(12.0));
-                                    ui.label(egui::RichText::new(format!("OS: {} ({}); Arch: {}", std::env::consts::OS, std::env::consts::FAMILY, std::env::consts::ARCH)).size(12.0));
-                                    ui.end_row();
-                                });
-                            });
-                        });
-                }
-            );
+                    });
+                });
+            if close_clicked {
+                about_open = false;
+            }
             self.about_open = about_open;
         }
 
@@ -875,6 +1050,33 @@ impl App {
                 UpdateMessage::OsThemeChanged(theme) => {
                     self.os_theme = Some(theme);
                 }
+                UpdateMessage::PackageInstalled(pkg, result) => {
+                    let mut set_ai_tab = false;
+                    if !self.tabs.is_empty() {
+                        let tab = self.active_tab_mut();
+                        match result {
+                            Ok(_) => {
+                                tab.status_message = format!("Package {} installed successfully", pkg).into();
+                                tab.ai_output_log.push((
+                                    format!("Package {} installed successfully", pkg),
+                                    egui::Color32::from_rgb(60, 180, 75),
+                                ));
+                            }
+                            Err(e) => {
+                                tab.status_message = format!("Failed to install {}", pkg).into();
+                                tab.ai_output_log.push((
+                                    format!("Failed to install {}: {}", pkg, e),
+                                    egui::Color32::from_rgb(220, 60, 60),
+                                ));
+                            }
+                        }
+                        set_ai_tab = true;
+                    }
+                    if set_ai_tab {
+                        self.output_panel_tab = OutputPanelTab::AI;
+                        self.show_outputs_requested = true;
+                    }
+                }
                 UpdateMessage::CompilerDownloadComplete(result) => {
                     match result {
                         Ok(path) => {
@@ -1021,9 +1223,27 @@ impl App {
                             });
                         });
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.add(crate::components::textfield::password(&mut self.llm_api_key)
-                                .margin(egui::vec2(12.0, 10.0))
-                                .desired_width(320.0));
+                            if self.has_saved_llm_key {
+                                ui.add_enabled(false, crate::components::textfield::password(&mut self.llm_api_key.clone())
+                                    .margin(egui::vec2(12.0, 10.0))
+                                    .desired_width(240.0));
+                                ui.add_space(8.0);
+                                if ui.button("Remove").clicked() {
+                                    let dialog = rfd::MessageDialog::new()
+                                        .set_title("Remove API Key")
+                                        .set_description("Are you sure you want to remove the API key ?")
+                                        .set_buttons(rfd::MessageButtons::YesNo);
+                                    if dialog.show() == rfd::MessageDialogResult::Yes {
+                                        self.llm_api_key.clear();
+                                        self.has_saved_llm_key = false;
+                                        Self::remove_llm_api_key();
+                                    }
+                                }
+                            } else {
+                                ui.add(crate::components::textfield::password(&mut self.llm_api_key)
+                                    .margin(egui::vec2(12.0, 10.0))
+                                    .desired_width(320.0));
+                            }
                         });
                         ui.end_row();
                     });
@@ -1037,21 +1257,30 @@ impl App {
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Add").clicked() {
-                            match Self::validate_api_key(&self.llm_provider, &self.llm_api_key) {
-                                Ok(_) => {
-                                    self.llm_api_key_error = None;
-                                    close_requested = true;
-                                }
-                                Err(e) => {
-                                    self.llm_api_key_error = Some(e.to_string());
+                        if self.has_saved_llm_key {
+                            if ui.button("Close").clicked() {
+                                self.llm_api_key_error = None;
+                                close_requested = true;
+                            }
+                        } else {
+                            if ui.button("Add").clicked() {
+                                match Self::validate_api_key(&self.llm_provider, &self.llm_api_key) {
+                                    Ok(_) => {
+                                        Self::save_llm_api_key(&self.llm_api_key);
+                                        self.has_saved_llm_key = true;
+                                        self.llm_api_key_error = None;
+                                        close_requested = true;
+                                    }
+                                    Err(e) => {
+                                        self.llm_api_key_error = Some(e.to_string());
+                                    }
                                 }
                             }
-                        }
-                        ui.add_space(16.0);
-                        if ui.button("Cancel").clicked() {
-                            self.llm_api_key_error = None;
-                            close_requested = true;
+                            ui.add_space(16.0);
+                            if ui.button("Cancel").clicked() {
+                                self.llm_api_key_error = None;
+                                close_requested = true;
+                            }
                         }
                     });
                 });
@@ -1437,7 +1666,10 @@ impl App {
     }
 
     fn output_panel(&mut self, ui: &mut egui::Ui) {
-        let log = self.active_tab().output_log.clone();
+        let log = match self.output_panel_tab {
+            OutputPanelTab::Compiler => self.active_tab().output_log.clone(),
+            OutputPanelTab::AI => self.active_tab().ai_output_log.clone(),
+        };
         let text_color = ui.style().visuals.text_color();
         egui::Frame::NONE
             .fill(if ui.visuals().dark_mode {
@@ -1449,13 +1681,42 @@ impl App {
             .corner_radius(egui::CornerRadius::same(6))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Output").strong().size(14.0));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Clear").clicked() {
-                            if !self.tabs.is_empty() {
-                                self.active_tab_mut().output_log.clear();
-                            }
+                    ui.scope(|ui| {
+                        let is_dark = ui.visuals().dark_mode;
+                        ui.style_mut().spacing.button_padding = egui::vec2(16.0, 8.0); // Bigger tabs
+                        ui.style_mut().visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.selection.bg_fill = if is_dark {
+                            egui::Color32::from_rgb(65, 65, 75) // Darker background
+                        } else {
+                            egui::Color32::from_rgb(215, 215, 225)
+                        };
+                        
+                        let compiler_text = egui::RichText::new("Compiler Output").size(14.0).strong();
+                        ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::Compiler, compiler_text);
+                        
+                        if self.has_saved_llm_key {
+                            let ai_text = egui::RichText::new("AI Output").size(14.0).strong();
+                            ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::AI, ai_text);
                         }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.scope(|ui| {
+                            ui.style_mut().spacing.button_padding = egui::vec2(16.0, 8.0);
+                            ui.style_mut().visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+                            ui.style_mut().visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+                            ui.style_mut().visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+                            
+                            if ui.button(egui::RichText::new("Clear").size(14.0).strong()).clicked() {
+                                if !self.tabs.is_empty() {
+                                    match self.output_panel_tab {
+                                        OutputPanelTab::Compiler => self.active_tab_mut().output_log.clear(),
+                                        OutputPanelTab::AI => self.active_tab_mut().ai_output_log.clear(),
+                                    }
+                                }
+                            }
+                        });
                     });
                 });
                 ui.separator();

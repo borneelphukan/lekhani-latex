@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::compiler::CompileStatus;
 
 impl App {
-    pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn status_bar(&mut self, ui: &mut egui::Ui) {
         if self.tabs.is_empty() {
             ui.horizontal(|ui| {
                 ui.colored_label(Color32::GRAY, "Ready");

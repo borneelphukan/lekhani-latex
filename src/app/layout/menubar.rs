@@ -16,7 +16,7 @@ fn project_tex_path(path: &Path) -> PathBuf {
 }
 
 impl App {
-    pub(super) fn menu_bar(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn menu_bar(&mut self, ui: &mut egui::Ui) {
         ui.style_mut()
             .text_styles
             .insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
@@ -32,23 +32,23 @@ impl App {
                 if ui.button("New Document").clicked() {
                     ui.close();
                     self.file_dialog_action =
-                        Some(super::FileDialogAction::NewDocument);
+                        Some(crate::app::FileDialogAction::NewDocument);
                 }
                 if ui.button("Open…").clicked() {
                     ui.close();
                     self.file_dialog_action =
-                        Some(super::FileDialogAction::Open);
+                        Some(crate::app::FileDialogAction::Open);
                 }
                 let has_tabs = !self.tabs.is_empty();
                 if ui.add_enabled(has_tabs, crate::components::button::standard("Save")).clicked() {
                     ui.close();
                     self.file_dialog_action =
-                        Some(super::FileDialogAction::Save);
+                        Some(crate::app::FileDialogAction::Save);
                 }
                 if ui.add_enabled(has_tabs, crate::components::button::standard("Save As…")).clicked() {
                     ui.close();
                     self.file_dialog_action =
-                        Some(super::FileDialogAction::SaveAs);
+                        Some(crate::app::FileDialogAction::SaveAs);
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
@@ -84,6 +84,22 @@ impl App {
 
             ui.menu_button("Options", |ui| {
                 ui.set_min_width(220.0);
+                
+                ui.menu_button("Theme", |ui| {
+                    if ui.radio_value(&mut self.theme, crate::types::Theme::System, "System").clicked() {
+                        crate::app::App::save_theme(self.theme);
+                        ui.close();
+                    }
+                    if ui.radio_value(&mut self.theme, crate::types::Theme::Light, "Light").clicked() {
+                        crate::app::App::save_theme(self.theme);
+                        ui.close();
+                    }
+                    if ui.radio_value(&mut self.theme, crate::types::Theme::Dark, "Dark").clicked() {
+                        crate::app::App::save_theme(self.theme);
+                        ui.close();
+                    }
+                });
+                
                 if ui.button("Integrate LLM").clicked() {
                     self.show_llm_settings = true;
                     ui.close();
@@ -105,7 +121,7 @@ impl App {
         ui.add_space(4.0);
     }
 
-    pub(super) fn trigger_compile(&mut self) {
+    pub(crate) fn trigger_compile(&mut self) {
         if self.tabs.is_empty() {
             return;
         }
@@ -144,18 +160,45 @@ impl App {
         }
     }
 
-    pub(super) fn trigger_llm_correction(&mut self) {
+    pub(crate) fn trigger_llm_correction(&mut self) {
+        self.do_llm_correction(None);
+    }
+
+    pub(crate) fn trigger_llm_correction_for_line(&mut self, line: usize) {
+        self.do_llm_correction(Some(line));
+    }
+
+    fn do_llm_correction(&mut self, target_line: Option<usize>) {
         if self.tabs.is_empty() || self.llm_correction_in_progress {
             return;
         }
         self.llm_correction_in_progress = true;
         let tab = self.active_tab_mut();
-        let text = tab.buffer.text.clone();
+        tab.ai_output_log.clear();
+        
+        let mut text = tab.buffer.text.clone();
+        if let Some(l) = target_line {
+            if let Some(line_text) = text.lines().nth(l.saturating_sub(1)) {
+                text = line_text.to_string();
+            }
+        }
+        
+        let errors = tab.error_message.clone().unwrap_or_default();
         let tx = self.llm_tx.clone();
         let api_key = self.llm_api_key.clone();
         
         std::thread::spawn(move || {
-            let prompt = format!("Fix any LaTeX syntax errors in the following document. Return only the corrected LaTeX code without any additional explanation or markdown blocks.\n\n{}", text);
+            let prompt = if target_line.is_some() {
+                format!(
+                    "Fix any LaTeX syntax errors in the following line based on these errors: {}\n\nLine:\n{}\n\nReturn a single JSON object (NOT an array): if the error EXPLICITLY states a missing .sty file, use {{\"action\":\"install\",\"package\":\"name\",\"explanation\":\"short explanation\"}}. Otherwise, if correcting code, use {{\"action\":\"correct\",\"text\":\"corrected line\",\"explanation\":\"short explanation\"}}. Do not guess missing packages for undefined control sequences; fix the code instead. If correcting, provide the FULL corrected line WITHOUT adding any new comments to the code. Keep the explanation short to save tokens. Return ONLY the JSON.",
+                    errors, text
+                )
+            } else {
+                format!(
+                    "Fix any LaTeX syntax errors in the following document based on these errors: {}\n\nDocument:\n{}\n\nReturn a single JSON object (NOT an array): if the error EXPLICITLY states a missing .sty file, use {{\"action\":\"install\",\"package\":\"name\",\"explanation\":\"short explanation\"}}. Otherwise, if correcting code, use {{\"action\":\"correct\",\"text\":\"corrected document\",\"explanation\":\"short explanation\"}}. Do not guess missing packages for undefined control sequences; fix the code instead. If correcting, you MUST provide the ENTIRE document with the corrections applied, do not just return the corrected snippet. DO NOT add any new comments to the code explaining your changes. Keep the explanation short to save tokens. Return ONLY the JSON.",
+                    errors, text
+                )
+            };
             
             let body = serde_json::to_string(&serde_json::json!({
                 "model": "gpt-4o-mini",
@@ -178,9 +221,45 @@ impl App {
                     
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_str) {
                         if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
-                            let _ = tx.send(Ok(content.to_string()));
+                            let content = content.trim();
+                            let parsed = if content.starts_with("```json") {
+                                let c = content.trim_start_matches("```json").trim_end_matches("```").trim();
+                                serde_json::from_str::<serde_json::Value>(c)
+                            } else {
+                                serde_json::from_str::<serde_json::Value>(content)
+                            };
+
+                            if let Ok(mut obj) = parsed {
+                                if let Some(arr) = obj.as_array() {
+                                    if let Some(first) = arr.first() {
+                                        obj = first.clone();
+                                    }
+                                }
+                                let explanation = obj.get("explanation").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                if let Some(action) = obj.get("action").and_then(|v| v.as_str()) {
+                                    if action == "install" {
+                                        if let Some(pkg) = obj.get("package").and_then(|v| v.as_str()) {
+                                            let _ = tx.send(Ok(crate::app::LlmAction::InstallPackage {
+                                                package: pkg.to_string(),
+                                                explanation,
+                                            }));
+                                            return;
+                                        }
+                                    } else if action == "correct" {
+                                        if let Some(corrected_text) = obj.get("text").and_then(|v| v.as_str()) {
+                                            let _ = tx.send(Ok(crate::app::LlmAction::Correction {
+                                                text: corrected_text.to_string(),
+                                                line: target_line,
+                                                explanation,
+                                            }));
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = tx.send(Err(format!("Invalid response format from LLM. Raw response: {}", content)));
                         } else {
-                            let _ = tx.send(Err("Invalid response format from LLM".to_string()));
+                            let _ = tx.send(Err("No content in LLM response".to_string()));
                         }
                     } else {
                         let _ = tx.send(Err("Failed to parse LLM response".to_string()));
@@ -193,7 +272,7 @@ impl App {
         });
     }
 
-    pub(super) fn new_document(&mut self) {
+    pub(crate) fn new_document(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("LaTeX", &["tex"])
             .set_file_name("document.tex")
@@ -214,7 +293,7 @@ impl App {
         }
     }
 
-    pub(super) fn open_file(&mut self) {
+    pub(crate) fn open_file(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("LaTeX", &["tex", "sty", "cls"])
             .pick_file()
@@ -229,7 +308,7 @@ impl App {
         }
     }
 
-    pub(super) fn save_file(&mut self) {
+    pub(crate) fn save_file(&mut self) {
         if self.tabs.is_empty() {
             return;
         }
@@ -256,7 +335,7 @@ impl App {
         }
     }
 
-    pub(super) fn save_as_file(&mut self) {
+    pub(crate) fn save_as_file(&mut self) {
         if self.tabs.is_empty() {
             return;
         }

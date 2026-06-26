@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::time::Instant;
 use egui::{Color32, ScrollArea, TextEdit};
 use crate::app::App;
@@ -229,19 +228,24 @@ impl App {
             ..Default::default()
         };
 
+        let mut do_ai_fix_line = None;
         frame.show(ui, |ui| {
             egui::ScrollArea::both()
                 .id_salt("editor_main_scroll")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.horizontal_top(|ui| {
-                        self.text_edit_area(ui, &error_lines);
+                        do_ai_fix_line = self.text_edit_area(ui, &error_lines);
                     });
                 });
         });
+        
+        if let Some(line) = do_ai_fix_line {
+            self.trigger_llm_correction_for_line(line);
+        }
     }
 
-    fn text_edit_area(&mut self, ui: &mut egui::Ui, error_lines: &[usize]) {
+    fn text_edit_area(&mut self, ui: &mut egui::Ui, error_lines: &[usize]) -> Option<usize> {
         let theme = self.theme;
         let ctx = ui.ctx().clone();
         let error_lines = error_lines.to_vec();
@@ -320,6 +324,8 @@ impl App {
             }
         }
         let selection_bg = ctx.global_style().visuals.selection.bg_fill;
+        
+        let error_lines_for_layout = error_lines.clone();
 
         let mut layouter =
             move |layouter_ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
@@ -360,7 +366,7 @@ impl App {
                         lexer::TokenType::Text => syn.text,
                     };
                     let line = line_of(token.start);
-                    let base_bg = if error_lines.contains(&line) {
+                    let base_bg = if error_lines_for_layout.contains(&line) {
                         err_bg
                     } else {
                         Color32::TRANSPARENT
@@ -500,8 +506,29 @@ impl App {
         let mut do_copy = false;
         let mut do_paste = false;
         let mut do_select_all = false;
+        let mut do_ai_fix = false;
         
+        let current_line = text.chars().take(cursor_char).filter(|&c| c == '\n').count() + 1;
+        
+        if let Some(pos) = response.hover_pos() {
+            let local_pos = pos - output.galley_pos;
+            let cursor = output.galley.cursor_from_pos(local_pos);
+            let hover_char = cursor.index;
+            let hover_line = text.chars().take(hover_char).filter(|&c| c == '\n').count() + 1;
+            ui.data_mut(|d| d.insert_temp(response.id.with("hover_line"), hover_line));
+        }
+        let stored_line = ui.data(|d| d.get_temp(response.id.with("hover_line"))).unwrap_or(current_line);
+        
+        let can_ai_fix = self.has_saved_llm_key;
+
         response.context_menu(|ui| {
+            if can_ai_fix {
+                if ui.button("✨ Fix with AI").clicked() {
+                    do_ai_fix = true;
+                    ui.close();
+                }
+                ui.separator();
+            }
             if ui.button("Cut (Ctrl + X)").clicked() {
                 do_cut = true;
                 ui.memory_mut(|m| m.request_focus(response.id));
@@ -601,39 +628,8 @@ impl App {
             tab.buffer.sync_after_edit();
         }
 
-        self.completion_visible = false;
-        if response.has_focus() && cursor_pos > 0 && (!self.completion_block_trigger || changed) {
-            self.completion_block_trigger = false;
-            let text = &self.active_tab().buffer.text;
-            let cursor = cursor_pos.min(text.len());
-            let before = &text[..cursor];
-
-            if let Some(bslash) = before.rfind('\\') {
-                let partial = &before[bslash..];
-                if partial.len() > 1
-                    && partial[1..].chars().all(|c| c.is_alphanumeric())
-                {
-                    let matches = completions::find_completions(partial);
-                    if !matches.is_empty() {
-                        let new_matches: Vec<String> =
-                            matches.into_iter().map(|s| s.to_string()).collect();
-                        let prefix = partial.to_string();
-                        let prefix_changed = prefix != self.completion_prefix;
-                        self.completion_visible = true;
-                        self.completion_matches = new_matches;
-                        self.completion_byte_range = Some((bslash, cursor));
-                        self.completion_prefix = prefix;
-                        if prefix_changed {
-                            self.completion_selected = 0;
-                        } else {
-                            self.completion_selected = self
-                                .completion_selected
-                                .min(self.completion_matches.len() - 1);
-                        }
-                    }
-                }
-            }
-        }
+        let mut close_completion = nav_enter;
+        let mut selected_idx = if nav_enter { Some(self.completion_selected) } else { None };
 
         if nav_escape {
             self.completion_visible = false;
@@ -641,31 +637,26 @@ impl App {
         }
         if nav_up {
             if self.completion_selected == 0 {
-                self.completion_selected = self.completion_matches.len() - 1;
+                self.completion_selected = self.completion_matches.len().saturating_sub(1);
             } else {
                 self.completion_selected -= 1;
             }
         }
         if nav_down {
-            self.completion_selected =
-                (self.completion_selected + 1) % self.completion_matches.len();
+            if !self.completion_matches.is_empty() {
+                self.completion_selected = (self.completion_selected + 1) % self.completion_matches.len();
+            }
         }
 
         if self.completion_visible {
             let popup_pos = cursor_screen_pos;
             let matches = self.completion_matches.clone();
-            let range = self.completion_byte_range;
-            let selected_index = self.completion_selected;
             let resolved = self.theme.resolve(ui.ctx());
             let bg_fill = match resolved {
                 Theme::Dark => Color32::from_rgb(40, 44, 52),
                 Theme::Light => Color32::from_rgb(255, 255, 255),
                 Theme::System => unreachable!(),
             };
-
-            let close = Cell::new(nav_enter);
-            let selected: Cell<Option<usize>> =
-                Cell::new(if nav_enter { Some(selected_index) } else { None });
             let popup_id = egui::Id::new("latex_completions");
 
             let _ = egui::Area::new(popup_id)
@@ -684,47 +675,99 @@ impl App {
                             .show(ui, |ui| {
                                 for (i, cmd) in matches.iter().enumerate() {
                                     let label = cmd.replacen('\\', "", 1);
-                                    let is_selected = i == selected_index;
+                                    let is_selected = i == self.completion_selected;
                                     let mut button = crate::components::button::standard(&label);
                                     if is_selected {
                                         let select_bg = match resolved {
-                                            Theme::Dark => {
-                                                Color32::from_rgb(60, 70, 90)
-                                            }
-                                            Theme::Light => {
-                                                Color32::from_rgb(200, 200, 220)
-                                            }
+                                            Theme::Dark => Color32::from_rgb(60, 70, 90),
+                                            Theme::Light => Color32::from_rgb(200, 200, 220),
                                             Theme::System => unreachable!(),
                                         };
                                         button = button.fill(select_bg);
                                     }
                                     if ui.add(button).clicked() {
-                                        close.set(true);
-                                        selected.set(Some(i));
+                                        close_completion = true;
+                                        selected_idx = Some(i);
                                     }
                                 }
                             });
                     });
                 });
+        }
 
-            if close.get() {
-                if let Some(idx) = selected.get() {
-                    if let Some(replacement) = matches.get(idx) {
-                        if let Some((start, end)) = range {
-                            let tab = self.active_tab_mut();
-                            let text = &mut tab.buffer.text;
-                            if start <= end && end <= text.len() {
-                                text.replace_range(start..end, replacement);
-                                tab.buffer.cursor = start + replacement.len();
-                                tab.buffer.sync_after_edit();
+        if close_completion {
+            if let Some(idx) = selected_idx {
+                if let Some(replacement) = self.completion_matches.get(idx).cloned() {
+                    if let Some((start, end)) = self.completion_byte_range {
+                        let tab = self.active_tab_mut();
+                        let text = &mut tab.buffer.text;
+                        if start <= end && end <= text.len() {
+                            text.replace_range(start..end, &replacement);
+                            cursor_pos = start + replacement.len();
+                            tab.buffer.cursor = cursor_pos;
+                            tab.buffer.sync_after_edit();
+                            changed = true;
+                            
+                            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_pos))));
+                                state.store(ui.ctx(), response.id);
+                            }
+                            ui.memory_mut(|m| m.request_focus(response.id));
+                        }
+                    }
+                }
+            }
+            self.completion_visible = false;
+            self.completion_prefix.clear();
+            self.completion_block_trigger = true;
+        }
+
+        let clicked_outside = ui.input(|i| i.pointer.any_click()) && !close_completion && !response.hovered();
+        if clicked_outside {
+            self.completion_visible = false;
+            self.completion_prefix.clear();
+        }
+
+        if !close_completion {
+            let evaluate = changed || self.completion_visible;
+            if (response.has_focus() || ui.memory(|m| m.has_focus(response.id))) && cursor_pos > 0 && evaluate {
+                self.completion_block_trigger = false;
+                let text = &self.active_tab().buffer.text;
+                let cursor = cursor_pos.min(text.len());
+                let before = &text[..cursor];
+
+                let mut keep_visible = false;
+                if let Some(bslash) = before.rfind('\\') {
+                    let partial = &before[bslash..];
+                    if partial.len() >= 1 && partial[1..].chars().all(|c| c.is_alphanumeric()) {
+                        let matches = completions::find_completions(partial);
+                        if !matches.is_empty() {
+                            let new_matches: Vec<String> = matches.into_iter().map(|s| s.to_string()).collect();
+                            let prefix = partial.to_string();
+                            let prefix_changed = prefix != self.completion_prefix;
+                            self.completion_visible = true;
+                            keep_visible = true;
+                            self.completion_matches = new_matches;
+                            self.completion_byte_range = Some((bslash, cursor));
+                            self.completion_prefix = prefix;
+                            if prefix_changed {
+                                self.completion_selected = 0;
+                            } else {
+                                self.completion_selected = self.completion_selected.min(self.completion_matches.len().saturating_sub(1));
                             }
                         }
                     }
                 }
-                self.completion_visible = false;
-                self.completion_prefix.clear();
-                self.completion_block_trigger = true;
+                if !keep_visible {
+                    self.completion_visible = false;
+                }
             }
+        }
+        
+        if do_ai_fix {
+            Some(stored_line)
+        } else {
+            None
         }
     }
 }

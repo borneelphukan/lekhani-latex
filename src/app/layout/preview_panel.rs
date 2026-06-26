@@ -3,7 +3,7 @@ use egui::{Color32, ScrollArea};
 use crate::app::App;
 
 impl App {
-    pub(super) fn preview_toolbar(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn preview_toolbar(&mut self, ui: &mut egui::Ui) {
         if self.tabs.is_empty() {
             return;
         }
@@ -82,7 +82,7 @@ impl App {
         });
     }
 
-    pub(super) fn preview_content(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn preview_content(&mut self, ui: &mut egui::Ui) {
         if self.tabs.is_empty() {
             return;
         }
