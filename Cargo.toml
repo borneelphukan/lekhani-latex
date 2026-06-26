@@ -3,6 +3,8 @@ name = "lekhani-latex"
 version = "0.1.0"
 edition = "2021"
 description = "A modern, easy-to-use LaTeX editor with live preview"
+license = "MIT"
+
 
 [dependencies]
 egui = "0.34"
