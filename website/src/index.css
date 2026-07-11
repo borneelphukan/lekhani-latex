@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "Playfair Display", serif;
+  --color-brand-50: #f5f7fa;
+  --color-brand-100: #e4ebf3;
+  --color-brand-200: #cbd9e9;
+  --color-brand-300: #a3bfdb;
+  --color-brand-400: #759dcb;
+  --color-brand-500: #5382bc;
+  --color-brand-600: #40669e;
+  --color-brand-700: #345281;
+  --color-brand-800: #2d466b;
+  --color-brand-900: #283b59;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-gray-900 bg-white;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight text-gray-900;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-sm;
+  }
+}

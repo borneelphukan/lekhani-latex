@@ -63,6 +63,17 @@ pub enum OutputPanelTab {
     AI,
 }
 
+const LLM_PRESETS: &[(&str, &str)] = &[
+    ("Llama 3.2 3B", "llama-3.2-3b"),
+    ("Llama 3.1 8B", "llama-3.1-8b"),
+    ("Mistral 7B", "mistral-7b"),
+    ("Gemma 2 9B", "gemma-2-9b"),
+    ("Phi-3 Mini", "phi-3-mini"),
+    ("Qwen 2.5 7B", "qwen-2.5-7b"),
+    ("Qwen 2.5 14B", "qwen-2.5-14b"),
+    ("DeepSeek-V2", "deepseek-v2"),
+];
+
 pub struct App {
     tabs: Vec<tab::Tab>,
     active_tab: usize,
@@ -89,9 +100,13 @@ pub struct App {
     llm_tx: std::sync::mpsc::Sender<Result<LlmAction, String>>,
     llm_rx: std::sync::mpsc::Receiver<Result<LlmAction, String>>,
     llm_api_key: String,
-    has_saved_llm_key: bool,
-    llm_provider: String,
-    llm_api_key_error: Option<String>,
+    llm_settings_tab_index: usize,
+    llm_selected_preset: usize,
+    llm_is_custom_model: bool,
+    llm_configured: bool,
+    llm_model: String,
+    llm_custom_model: String,
+    llm_endpoint_url: String,
     show_llm_settings: bool,
     os_theme: Option<egui::Theme>,
     startup_compiler_checked: bool,
@@ -137,9 +152,13 @@ impl App {
             llm_tx,
             llm_rx,
             llm_api_key: String::new(),
-            has_saved_llm_key: false,
-            llm_provider: "OpenAI".to_string(),
-            llm_api_key_error: None,
+            llm_settings_tab_index: 0,
+            llm_selected_preset: 0,
+            llm_is_custom_model: false,
+            llm_configured: false,
+            llm_model: String::new(),
+            llm_custom_model: String::new(),
+            llm_endpoint_url: String::new(),
             show_llm_settings: false,
             os_theme: None,
             startup_compiler_checked: false,
@@ -148,9 +167,14 @@ impl App {
             output_panel_tab: OutputPanelTab::Compiler,
         };
 
-        let (initial_key, has_saved) = Self::load_initial_api_key();
-        app.llm_api_key = initial_key;
-        app.has_saved_llm_key = has_saved;
+        let (key, tab_index, configured, model, custom_model, endpoint_url) = Self::load_initial_llm_settings();
+        app.llm_api_key = key;
+        app.llm_settings_tab_index = tab_index;
+        app.llm_configured = configured;
+        app.llm_model = model;
+        app.llm_custom_model = custom_model;
+        app.llm_endpoint_url = endpoint_url;
+        app.init_llm_preset_from_model();
         app.theme = Self::load_theme();
 
         let mut args = std::env::args().skip(1);
@@ -263,39 +287,39 @@ impl App {
         }
     }
 
-    fn load_llm_api_key() -> Option<String> {
+    fn load_llm_settings() -> (Option<String>, usize, bool, String, String, String) {
         let config = Self::read_app_config();
-        if let Some(key) = config.get("llm_api_key").and_then(|v| v.as_str()) {
-            if !key.is_empty() {
-                return Some(key.to_string());
+        let key = config.get("llm_api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let key = if let Some(k) = key { if !k.is_empty() { Some(k) } else { None } } else { None };
+        let tab_index = config.get("llm_settings_tab_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let configured = config.get("llm_configured").and_then(|v| v.as_bool()).unwrap_or(false);
+        let model = config.get("llm_model").and_then(|v| v.as_str()).unwrap_or("llama-3.2-3b").to_string();
+        let custom_model = config.get("llm_custom_model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let endpoint_url = config.get("llm_endpoint_url").and_then(|v| v.as_str()).unwrap_or("http://localhost:1234/v1").to_string();
+        (key, tab_index, configured, model, custom_model, endpoint_url)
+    }
+
+    fn load_initial_llm_settings() -> (String, usize, bool, String, String, String) {
+        let (key, tab_index, configured, model, custom_model, endpoint_url) = Self::load_llm_settings();
+        if let Some(k) = key {
+            return (k, tab_index, true, model, custom_model, endpoint_url);
+        }
+        if let Ok(k) = std::env::var("LLM_API_KEY") {
+            if !k.is_empty() {
+                return (k, tab_index, true, model, custom_model, endpoint_url);
             }
         }
-        None
+        (String::new(), tab_index, configured, model, custom_model, endpoint_url)
     }
 
-    fn load_initial_api_key() -> (String, bool) {
-        if let Some(key) = Self::load_llm_api_key() {
-            return (key, true);
-        }
-        if let Ok(key) = std::env::var("LLM_API_KEY") {
-            if !key.is_empty() {
-                return (key, true);
-            }
-        }
-        (String::new(), false)
-    }
-
-    fn save_llm_api_key(key: &str) {
+    fn save_llm_settings(&self) {
         let mut config = Self::read_app_config();
-        config["llm_api_key"] = serde_json::json!(key);
-        Self::write_app_config(&config);
-    }
-
-    fn remove_llm_api_key() {
-        let mut config = Self::read_app_config();
-        if let Some(obj) = config.as_object_mut() {
-            obj.remove("llm_api_key");
-        }
+        config["llm_api_key"] = serde_json::json!(self.llm_api_key);
+        config["llm_settings_tab_index"] = serde_json::json!(self.llm_settings_tab_index);
+        config["llm_configured"] = serde_json::json!(self.llm_configured);
+        config["llm_model"] = serde_json::json!(self.llm_model);
+        config["llm_custom_model"] = serde_json::json!(self.llm_custom_model);
+        config["llm_endpoint_url"] = serde_json::json!(self.llm_endpoint_url);
         Self::write_app_config(&config);
     }
 
@@ -1126,170 +1150,275 @@ impl App {
         }
     }
 
-    fn validate_api_key(provider: &str, key: &str) -> Result<(), &'static str> {
-        let key = key.trim();
-        if key.is_empty() {
-            return Err("API key cannot be empty");
+    pub(crate) fn init_llm_preset_from_model(&mut self) {
+        self.llm_is_custom_model = true;
+        self.llm_selected_preset = LLM_PRESETS.len();
+        self.llm_custom_model = self.llm_model.clone();
+
+        for (i, (_, model_id)) in LLM_PRESETS.iter().enumerate() {
+            if *model_id == self.llm_model {
+                self.llm_is_custom_model = false;
+                self.llm_selected_preset = i;
+                self.llm_custom_model.clear();
+                break;
+            }
         }
-        match provider {
-            "OpenAI" => {
-                if !key.starts_with("sk-") {
-                    return Err("OpenAI API key must start with 'sk-'");
-                }
-            }
-            "Anthropic" => {
-                if !key.starts_with("sk-ant-") {
-                    return Err("Anthropic API key must start with 'sk-ant-'");
-                }
-            }
-            "Gemini" => {
-                if !key.starts_with("AIza") {
-                    return Err("Gemini API key must start with 'AIza'");
-                }
-            }
-            "Mistral" | "Cohere" | "Custom" => {
-                if key.len() < 8 {
-                    return Err("API key seems too short");
-                }
-            }
-            _ => {}
-        }
-        Ok(())
     }
 
     fn llm_settings_dialog(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_llm_settings;
-        let mut close_requested = false;
-        egui::Window::new("llm_settings_dialog")
-            .title_bar(false)
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .pivot(egui::Align2::CENTER_CENTER)
-            .default_pos(ctx.content_rect().center())
-            .frame(
-                egui::Frame::window(&ctx.global_style())
-                    .inner_margin(egui::Margin { left: 24, right: 24, top: 16, bottom: 24 })
-                    .corner_radius(8),
-            )
-            .show(ctx, |ui| {
-                ui.style_mut().text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
-                ui.style_mut().text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
-                ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
-                
-                ui.horizontal(|ui| {
-                    ui.heading(egui::RichText::new("Integrate LLM").strong().size(20.0));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(crate::components::button::borderless("✖")).clicked() {
-                            close_requested = true;
-                        }
-                    });
-                });
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(16.0);
+        let mut settings_open = self.show_llm_settings;
+        if settings_open {
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("ai_settings_viewport"),
+                egui::ViewportBuilder::default()
+                    .with_title("AI Settings")
+                    .with_inner_size([650.0, 450.0])
+                    .with_resizable(false)
+                    .with_maximize_button(false)
+                    .with_minimize_button(false),
+                |ctx, _class| {
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        settings_open = false;
+                        self.save_llm_settings();
+                    }
 
-                egui::Grid::new("llm_settings_grid")
-                    .num_columns(2)
-                    .spacing([24.0, 24.0])
-                    .show(ui, |ui| {
-                        ui.vertical(|ui| {
-                            ui.add_space(8.0);
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                ui.label("Provider:");
-                            });
-                        });
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            let old_provider = self.llm_provider.clone();
-                            crate::components::dropdown::dropdown("llm_provider_combo", &self.llm_provider)
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut self.llm_provider, "OpenAI".to_string(), "OpenAI");
-                                    ui.selectable_value(&mut self.llm_provider, "Anthropic".to_string(), "Anthropic");
-                                    ui.selectable_value(&mut self.llm_provider, "Gemini".to_string(), "Gemini");
-                                    ui.selectable_value(&mut self.llm_provider, "Mistral".to_string(), "Mistral");
-                                    ui.selectable_value(&mut self.llm_provider, "Cohere".to_string(), "Cohere");
-                                    ui.selectable_value(&mut self.llm_provider, "Custom".to_string(), "Custom");
+                    let is_light = ctx.system_theme() == Some(egui::Theme::Light);
+                    let mut style = (*ctx.global_style()).clone();
+                    if is_light {
+                        style.visuals = egui::Visuals::light();
+                    }
+                    let bg_fill = if is_light { egui::Color32::from_rgb(245, 245, 245) } else { ctx.global_style().visuals.window_fill };
+
+                    #[allow(deprecated)]
+                    egui::Panel::bottom("ai_settings_bottom_panel")
+                        .frame(egui::Frame::default().inner_margin(egui::Margin { left: 16, right: 16, top: 8, bottom: 16 }).fill(bg_fill))
+                        .show(ctx, |ui| {
+                            ui.set_style(style.clone());
+                            ui.horizontal(|ui| {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add(egui::Button::new("Cancel").min_size(egui::vec2(80.0, 28.0))).clicked() {
+                                        settings_open = false;
+                                        self.save_llm_settings();
+                                    }
+                                    ui.add_space(8.0);
+                                    if !self.llm_configured {
+                                        let can_save = if self.llm_settings_tab_index == 0 {
+                                            !self.llm_endpoint_url.trim().is_empty() && !self.llm_model.trim().is_empty()
+                                        } else {
+                                            !self.llm_api_key.trim().is_empty() && !self.llm_model.trim().is_empty()
+                                        };
+                                        if ui.add_enabled(can_save, egui::Button::new("Save").min_size(egui::vec2(80.0, 28.0))).clicked() {
+                                            if self.llm_is_custom_model && !self.llm_custom_model.is_empty() {
+                                                self.llm_model = self.llm_custom_model.clone();
+                                            }
+                                            self.llm_configured = true;
+                                            settings_open = false;
+                                            self.save_llm_settings();
+                                        }
+                                    } else {
+                                        if ui.add(egui::Button::new("Delete").fill(egui::Color32::from_rgb(200, 50, 50)).min_size(egui::vec2(80.0, 28.0))).clicked() {
+                                            self.llm_configured = false;
+                                            self.llm_api_key.clear();
+                                            if self.llm_settings_tab_index == 0 {
+                                                self.llm_endpoint_url = "http://localhost:1234/v1".to_string();
+                                            } else {
+                                                self.llm_endpoint_url = "https://api.openai.com/v1".to_string();
+                                            }
+                                            self.save_llm_settings();
+                                        }
+                                    }
                                 });
-                            if old_provider != self.llm_provider {
-                                self.llm_api_key_error = None;
-                            }
-                        });
-                        ui.end_row();
-
-                        ui.vertical(|ui| {
-                            ui.add_space(10.0);
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                ui.label("API Key:");
                             });
                         });
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            if self.has_saved_llm_key {
-                                ui.add_enabled(false, crate::components::textfield::password(&mut self.llm_api_key.clone())
-                                    .margin(egui::vec2(12.0, 10.0))
-                                    .desired_width(240.0));
-                                ui.add_space(8.0);
-                                if ui.button("Remove").clicked() {
-                                    let dialog = rfd::MessageDialog::new()
-                                        .set_title("Remove API Key")
-                                        .set_description("Are you sure you want to remove the API key ?")
-                                        .set_buttons(rfd::MessageButtons::YesNo);
-                                    if dialog.show() == rfd::MessageDialogResult::Yes {
-                                        self.llm_api_key.clear();
-                                        self.has_saved_llm_key = false;
-                                        Self::remove_llm_api_key();
-                                    }
-                                }
-                            } else {
-                                ui.add(crate::components::textfield::password(&mut self.llm_api_key)
-                                    .margin(egui::vec2(12.0, 10.0))
-                                    .desired_width(320.0));
-                            }
-                        });
-                        ui.end_row();
-                    });
 
-                ui.add_space(16.0);
-                if let Some(err) = &self.llm_api_key_error {
-                    ui.label(egui::RichText::new(err).color(egui::Color32::RED));
-                    ui.add_space(8.0);
+                    #[allow(deprecated)]
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::default().inner_margin(16).fill(bg_fill))
+                        .show(ctx, |ui| {
+                            let mut central_style = style.clone();
+                            central_style.spacing.interact_size.y = 32.0;
+                            ui.set_style(central_style);
+
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("LLM Service Configuration")
+                                        .size(16.0)
+                                        .strong(),
+                                );
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new("Configure your preferred AI model provider for PDF processing and chat features.")
+                                        .size(12.0)
+                                        .weak(),
+                                );
+                                ui.add_space(12.0);
+
+                                egui::Frame::group(ui.style())
+                                    .inner_margin(16.0)
+                                    .show(ui, |ui| {
+                                        // Right-aligned Tabs
+                                        ui.horizontal(|ui| {
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                let local_selected = self.llm_settings_tab_index == 0;
+                                                let api_selected = self.llm_settings_tab_index == 1;
+
+                                                ui.scope(|ui| {
+                                                    ui.spacing_mut().item_spacing.x = 0.0;
+
+                                                    let right_btn = egui::Button::new("API Key")
+                                                        .selected(api_selected)
+                                                        .corner_radius(egui::CornerRadius { nw: 0, ne: 8, sw: 0, se: 8 });
+                                                    if ui.add_sized([80.0, 28.0], right_btn).clicked() {
+                                                        self.llm_settings_tab_index = 1;
+                                                        if self.llm_endpoint_url == "http://localhost:1234/v1" || self.llm_endpoint_url.is_empty() {
+                                                            self.llm_endpoint_url = "https://api.openai.com/v1".to_string();
+                                                        }
+                                                        self.init_llm_preset_from_model();
+                                                    }
+
+                                                    let left_btn = egui::Button::new("Local LLM")
+                                                        .selected(local_selected)
+                                                        .corner_radius(egui::CornerRadius { nw: 8, ne: 0, sw: 8, se: 0 });
+                                                    if ui.add_sized([80.0, 28.0], left_btn).clicked() {
+                                                        self.llm_settings_tab_index = 0;
+                                                        if self.llm_endpoint_url == "https://api.openai.com/v1" || self.llm_endpoint_url.is_empty() {
+                                                            self.llm_endpoint_url = "http://localhost:1234/v1".to_string();
+                                                        }
+                                                        self.init_llm_preset_from_model();
+                                                    }
+                                                });
+                                            });
+                                        });
+                                        ui.add_space(16.0);
+
+                                        if self.llm_settings_tab_index == 0 {
+                                            ui.add_enabled_ui(!self.llm_configured, |ui| {
+                                                ui.label("Model:");
+                                                let mut selected = self.llm_selected_preset;
+                                                let preset_count = LLM_PRESETS.len();
+                                                egui::ComboBox::from_id_salt("llm_model_combo")
+                                                    .width(480.0)
+                                                    .selected_text(
+                                                        if self.llm_is_custom_model && self.llm_custom_model.is_empty() {
+                                                            "Select your LLM Model"
+                                                        } else if self.llm_is_custom_model {
+                                                            &self.llm_custom_model
+                                                        } else {
+                                                            LLM_PRESETS.get(self.llm_selected_preset)
+                                                                .map(|(name, _)| *name)
+                                                                .unwrap_or("Custom")
+                                                        }
+                                                    )
+                                                    .show_ui(ui, |ui| {
+                                                        for (i, (name, id)) in LLM_PRESETS.iter().enumerate() {
+                                                            let label = format!("{} ({})", name, id);
+                                                            if ui.selectable_value(&mut selected, i, label).clicked() {
+                                                                self.llm_selected_preset = i;
+                                                                self.llm_is_custom_model = false;
+                                                                self.llm_model = id.to_string();
+                                                                self.llm_custom_model.clear();
+                                                            }
+                                                        }
+                                                        if ui.selectable_value(&mut selected, preset_count, "Custom").clicked() {
+                                                            self.llm_selected_preset = preset_count;
+                                                            self.llm_is_custom_model = true;
+                                                            self.llm_custom_model = self.llm_model.clone();
+                                                        }
+                                                    });
+
+                                                if self.llm_selected_preset == preset_count {
+                                                    ui.add_space(12.0);
+                                                    ui.label("Custom Model Name:");
+                                                    ui.add(
+                                                        egui::TextEdit::singleline(&mut self.llm_custom_model)
+                                                            .hint_text("e.g. llama-3.2-3b")
+                                                            .desired_width(f32::INFINITY)
+                                                            .margin(egui::Margin::symmetric(8, 8)),
+                                                    );
+                                                    if !self.llm_custom_model.is_empty() {
+                                                        self.llm_model = self.llm_custom_model.clone();
+                                                    }
+                                                }
+
+                                                ui.add_space(12.0);
+
+                                                ui.label("Endpoint URL:");
+                                                ui.add(
+                                                    egui::TextEdit::singleline(&mut self.llm_endpoint_url)
+                                                        .hint_text("http://localhost:1234/v1")
+                                                        .desired_width(f32::INFINITY)
+                                                        .margin(egui::Margin::symmetric(8, 8)),
+                                                );
+                                                ui.add_space(4.0);
+                                            });
+
+                                        } else {
+                                            ui.add_enabled_ui(!self.llm_configured, |ui| {
+                                                ui.label("Model:");
+                                                let mut selected = self.llm_selected_preset;
+                                                let preset_count = LLM_PRESETS.len();
+                                                egui::ComboBox::from_id_salt("llm_model_combo_key")
+                                                    .width(480.0)
+                                                    .selected_text(
+                                                        if self.llm_is_custom_model && self.llm_custom_model.is_empty() {
+                                                            "Select your LLM Model"
+                                                        } else if self.llm_is_custom_model {
+                                                            &self.llm_custom_model
+                                                        } else {
+                                                            LLM_PRESETS.get(self.llm_selected_preset)
+                                                                .map(|(name, _)| *name)
+                                                                .unwrap_or("Select your LLM Model")
+                                                        }
+                                                    )
+                                                    .show_ui(ui, |ui| {
+                                                        for (i, (name, id)) in LLM_PRESETS.iter().enumerate() {
+                                                            let label = format!("{} ({})", name, id);
+                                                            if ui.selectable_value(&mut selected, i, label).clicked() {
+                                                                self.llm_selected_preset = i;
+                                                                self.llm_is_custom_model = false;
+                                                                self.llm_model = id.to_string();
+                                                                self.llm_custom_model.clear();
+                                                            }
+                                                        }
+                                                        if ui.selectable_value(&mut selected, preset_count, "Custom").clicked() {
+                                                            self.llm_selected_preset = preset_count;
+                                                            self.llm_is_custom_model = true;
+                                                            self.llm_custom_model = self.llm_model.clone();
+                                                        }
+                                                    });
+
+                                                if self.llm_selected_preset == preset_count {
+                                                    ui.add_space(12.0);
+                                                    ui.label("Custom Model Name:");
+                                                    ui.add(
+                                                        egui::TextEdit::singleline(&mut self.llm_custom_model)
+                                                            .hint_text("e.g. gpt-4o-mini")
+                                                            .desired_width(f32::INFINITY)
+                                                            .margin(egui::Margin::symmetric(8, 8)),
+                                                    );
+                                                    if !self.llm_custom_model.is_empty() {
+                                                        self.llm_model = self.llm_custom_model.clone();
+                                                    }
+                                                }
+
+                                                ui.add_space(12.0);
+
+                                                ui.label("API Key:");
+                                                ui.add(
+                                                    egui::TextEdit::singleline(&mut self.llm_api_key)
+                                                        .hint_text("sk-...")
+                                                        .password(true)
+                                                        .desired_width(f32::INFINITY)
+                                                        .margin(egui::Margin::symmetric(8, 8)),
+                                                );
+                                            });
+                                        }
+                                    });
+                            });
+                        });
                 }
-                ui.separator();
-                ui.add_space(16.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.has_saved_llm_key {
-                            if ui.button("Close").clicked() {
-                                self.llm_api_key_error = None;
-                                close_requested = true;
-                            }
-                        } else {
-                            if ui.button("Add").clicked() {
-                                match Self::validate_api_key(&self.llm_provider, &self.llm_api_key) {
-                                    Ok(_) => {
-                                        Self::save_llm_api_key(&self.llm_api_key);
-                                        self.has_saved_llm_key = true;
-                                        self.llm_api_key_error = None;
-                                        close_requested = true;
-                                    }
-                                    Err(e) => {
-                                        self.llm_api_key_error = Some(e.to_string());
-                                    }
-                                }
-                            }
-                            ui.add_space(16.0);
-                            if ui.button("Cancel").clicked() {
-                                self.llm_api_key_error = None;
-                                close_requested = true;
-                            }
-                        }
-                    });
-                });
-            });
-            
-        if close_requested {
-            self.show_llm_settings = false;
-        } else {
-            self.show_llm_settings = open;
+            );
+            self.show_llm_settings = settings_open;
         }
     }
     fn ui_update_dialog(&mut self, ui: &mut egui::Ui) {
@@ -1696,7 +1825,7 @@ impl App {
                         let compiler_text = egui::RichText::new("Compiler Output").size(14.0).strong();
                         ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::Compiler, compiler_text);
                         
-                        if self.has_saved_llm_key {
+                        if self.llm_configured {
                             let ai_text = egui::RichText::new("AI Output").size(14.0).strong();
                             ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::AI, ai_text);
                         }

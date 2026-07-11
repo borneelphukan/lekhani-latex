@@ -519,11 +519,12 @@ impl App {
         }
         let stored_line = ui.data(|d| d.get_temp(response.id.with("hover_line"))).unwrap_or(current_line);
         
-        let can_ai_fix = self.has_saved_llm_key;
+        let can_ai_fix = self.llm_configured;
+        let has_error = self.active_tab().error_message.is_some();
 
         response.context_menu(|ui| {
             if can_ai_fix {
-                if ui.button("✨ Fix with AI").clicked() {
+                if ui.add_enabled(has_error, egui::Button::new("✨ Fix with AI")).clicked() {
                     do_ai_fix = true;
                     ui.close();
                 }

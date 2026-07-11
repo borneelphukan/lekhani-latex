@@ -42,7 +42,7 @@ impl App {
                 Theme::System => unreachable!(),
             }).min_size(egui::vec2(110.0, 26.0));
                 
-            let llm_enabled = !self.tabs.is_empty() && !self.llm_correction_in_progress && self.has_saved_llm_key && self.active_tab().error_message.is_some();
+            let llm_enabled = !self.tabs.is_empty() && !self.llm_correction_in_progress && self.llm_configured && self.active_tab().error_message.is_some();
             let resp_llm = ui.add_enabled(llm_enabled, llm_btn);
             if resp_llm.clicked() {
                 self.trigger_llm_correction();
@@ -51,6 +51,27 @@ impl App {
             ui.separator();
 
             ui.checkbox(&mut self.auto_compile, "Auto-compile");
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let has_tabs = !self.tabs.is_empty();
+                let icon_text = egui::RichText::new("\u{25EB}").size(20.0);
+                let mut btn = egui::Button::new(icon_text).min_size(egui::vec2(28.0, 28.0)).corner_radius(6);
+                if ui.visuals().dark_mode {
+                    btn = btn.fill(egui::Color32::from_rgb(35, 35, 35));
+                }
+                let preview_active = if has_tabs { self.active_tab().show_preview } else { false };
+                let btn = if preview_active { btn.selected(true) } else { btn };
+                let resp = ui.add_enabled(has_tabs, btn).on_hover_text("Toggle Preview");
+                if resp.clicked() {
+                    let tab = self.active_tab_mut();
+                    tab.show_preview = !tab.show_preview;
+                    tab.status_message = if tab.show_preview {
+                        "Preview shown".into()
+                    } else {
+                        "Preview hidden".into()
+                    };
+                }
+            });
         });
     }
 }

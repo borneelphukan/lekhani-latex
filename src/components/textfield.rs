@@ -7,6 +7,7 @@ pub fn singleline(text: &mut String) -> TextEdit<'_> {
 }
 
 /// A single-line text field styled as a password input.
+#[allow(dead_code)]
 pub fn password(text: &mut String) -> TextEdit<'_> {
     TextEdit::singleline(text)
         .password(true)

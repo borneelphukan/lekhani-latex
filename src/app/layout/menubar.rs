@@ -60,7 +60,14 @@ impl App {
 
             let has_tabs = !self.tabs.is_empty();
             ui.menu_button("View", |ui| {
-                if ui.add_enabled(has_tabs, crate::components::button::standard("Toggle Preview")).clicked() {
+                if ui.visuals().dark_mode {
+                    ui.visuals_mut().selection.bg_fill = egui::Color32::from_rgb(40, 40, 40);
+                }
+
+                let preview_active = if has_tabs { self.active_tab().show_preview } else { false };
+                let preview_text = if preview_active { "✔ Toggle Preview" } else { "    Toggle Preview" };
+                
+                if ui.add_enabled(has_tabs, crate::components::button::standard(preview_text).selected(preview_active)).clicked() {
                     ui.close();
                     let tab = self.active_tab_mut();
                     tab.show_preview = !tab.show_preview;
@@ -70,19 +77,17 @@ impl App {
                         "Preview hidden".into()
                     };
                 }
+                
                 let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-                ui.scope(|ui| {
-                    if fs && ui.visuals().dark_mode {
-                        ui.visuals_mut().selection.bg_fill = egui::Color32::from_rgb(60, 60, 60);
-                    }
-                    if ui.add(crate::components::button::standard("\u{26F6} Fullscreen    F12").selected(fs)).clicked() {
-                        ui.close();
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
-                    }
-                });
+                let fs_text = if fs { "✔ Fullscreen    F12" } else { "    Fullscreen    F12" };
+                
+                if ui.add(crate::components::button::standard(fs_text).selected(fs)).clicked() {
+                    ui.close();
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
+                }
             });
 
-            ui.menu_button("Options", |ui| {
+            ui.menu_button("Settings", |ui| {
                 ui.set_min_width(220.0);
                 
                 ui.menu_button("Theme", |ui| {
@@ -100,7 +105,7 @@ impl App {
                     }
                 });
                 
-                if ui.button("Integrate LLM").clicked() {
+                if ui.button("AI Integration").clicked() {
                     self.show_llm_settings = true;
                     ui.close();
                 }
@@ -186,6 +191,10 @@ impl App {
         let errors = tab.error_message.clone().unwrap_or_default();
         let tx = self.llm_tx.clone();
         let api_key = self.llm_api_key.clone();
+        let use_local = self.llm_settings_tab_index == 0;
+        let model = if self.llm_custom_model.is_empty() { self.llm_model.clone() } else { self.llm_custom_model.clone() };
+        let model = if model.is_empty() { "gpt-4o-mini".to_string() } else { model };
+        let endpoint = if use_local { self.llm_endpoint_url.clone() } else { "https://api.openai.com/v1/chat/completions".to_string() };
         
         std::thread::spawn(move || {
             let prompt = if target_line.is_some() {
@@ -201,13 +210,13 @@ impl App {
             };
             
             let body = serde_json::to_string(&serde_json::json!({
-                "model": "gpt-4o-mini",
+                "model": model,
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
             })).unwrap_or_default();
 
-            let request = ureq::post("https://api.openai.com/v1/chat/completions")
+            let request = ureq::post(&endpoint)
                 .header("Authorization", &format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .send(body);
