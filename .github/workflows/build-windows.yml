@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build Windows .exe
 
 on:
   push:
@@ -14,26 +14,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Convert Logo to ICO
-        run: magick -background none -density 256 assets\logo.png -define icon:auto-resize="256,128,64,48,32,16" assets\logo.ico
-
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      - name: Build installer (Inno Setup)
-        run: iscc setup.iss
-
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
         with:
-          name: lekhani-latex-windows-installer
-          path: Output\lekhani-latexSetup.exe
+          name: Lekhani LaTeX Stable
+          tag_name: windows-stable
+          draft: true
+          prerelease: false
+          files: |
+            target/x86_64-pc-windows-msvc/release/lekhani-latex.exe

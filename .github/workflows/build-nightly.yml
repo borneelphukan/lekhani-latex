@@ -1,0 +1,55 @@
+name: Build Nightly Release (dev branch)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload Nightly executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lekhani-latex-windows-nightly-exe
+          path: target/x86_64-pc-windows-msvc/release/lekhani-latex.exe
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev'
+    permissions:
+      contents: write
+    steps:
+      - name: Download Nightly executable
+        uses: actions/download-artifact@v4
+        with:
+          name: lekhani-latex-windows-nightly-exe
+          path: windows-nightly-release
+
+      - name: Create Nightly GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Lekhani LaTeX Nightly
+          tag_name: windows-nightly-${{ github.sha }}
+          draft: true
+          prerelease: true
+          files: |
+            windows-nightly-release/lekhani-latex.exe

@@ -29,9 +29,10 @@ export default function Download() {
           </p>
           
           <a 
-            href="#" 
+            href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latex.exe"
             className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-            onClick={(e) => { e.preventDefault(); alert("Stable release download link would be here."); }}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             <DownloadIcon size={18} />
             Download Stable
@@ -56,9 +57,10 @@ export default function Download() {
           </p>
           
           <a 
-            href="#" 
+            href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latex.exe"
             className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors"
-            onClick={(e) => { e.preventDefault(); alert("Nightly release download link would be here."); }}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             <DownloadIcon size={18} />
             Download Nightly
