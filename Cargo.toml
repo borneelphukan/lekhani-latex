@@ -40,3 +40,7 @@ assets = [
     { source = "assets/lekhani-latex.desktop", dest = "usr/share/applications/lekhani-latex.desktop", mode = "644" }
 ]
 depends = "$auto, texlive-latex-recommended, poppler-utils"
+
+[profile.release]
+opt-level = 2
+strip = true

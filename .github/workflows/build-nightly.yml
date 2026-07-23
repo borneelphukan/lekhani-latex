@@ -6,8 +6,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: windows-latest
+    permissions:
+      contents: write
+
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
 
     steps:
       - uses: actions/checkout@v4
@@ -21,30 +27,22 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Run sccache-action
+        uses: Mozilla-Actions/sccache-action@v0.0.7
+
+      - name: Install cargo-chef
+        run: cargo install cargo-chef
+
+      - name: Prepare recipe
+        run: cargo chef prepare --recipe-path recipe.json
+
+      - name: Cook dependencies
+        run: cargo chef cook --release --target x86_64-pc-windows-msvc --recipe-path recipe.json
+
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Upload Nightly executable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lekhani-latex-windows-nightly-exe
-          path: target/x86_64-pc-windows-msvc/release/lekhani-latex.exe
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/dev'
-    permissions:
-      contents: write
-    steps:
-      - name: Download Nightly executable
-        uses: actions/download-artifact@v4
-        with:
-          name: lekhani-latex-windows-nightly-exe
-          path: windows-nightly-release
-
       - name: Create Nightly GitHub Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           name: Lekhani LaTeX Nightly
@@ -52,4 +50,4 @@ jobs:
           draft: true
           prerelease: true
           files: |
-            windows-nightly-release/lekhani-latex.exe
+            target/x86_64-pc-windows-msvc/release/lekhani-latex.exe
