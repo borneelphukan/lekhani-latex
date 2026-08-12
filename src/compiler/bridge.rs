@@ -116,11 +116,16 @@ impl CompilerBridge {
                 }
             }
 
-            let output_dir = path.parent().unwrap_or(Path::new("."));
+            let parent_dir = path.parent().unwrap_or(Path::new("."));
             let file_stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("output");
+
+            let output_dir = parent_dir.join(file_stem);
+            
+            // Create the output directory if it does not exist
+            let _ = std::fs::create_dir_all(&output_dir);
 
             let pdf_path = output_dir.join(format!("{}.pdf", file_stem));
             let log_path = output_dir.join(format!("{}.log", file_stem));
@@ -134,8 +139,9 @@ impl CompilerBridge {
             let tex_arg = path.to_string_lossy().to_string();
             let mut cmd = Command::new(&config.command);
             cmd.args(&config.args)
+                .arg(format!("-output-directory={}", output_dir.to_string_lossy()))
                 .arg(&tex_arg)
-                .current_dir(output_dir);
+                .current_dir(parent_dir);
             #[cfg(windows)]
             cmd.creation_flags(CREATE_NO_WINDOW);
 

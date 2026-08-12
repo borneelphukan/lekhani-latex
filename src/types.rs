@@ -109,8 +109,9 @@ pub struct CompilerConfig {
 impl Default for CompilerConfig {
     fn default() -> Self {
         Self {
-            command: "pdflatex".into(),
+            command: "latexmk".into(),
             args: vec![
+                "-pdf".into(),
                 "-interaction=nonstopmode".into(),
             ],
         }
