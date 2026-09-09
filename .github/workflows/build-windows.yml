@@ -2,9 +2,9 @@ name: Build Windows .exe
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
         with:
           name: Lekhani LaTeX Stable
           tag_name: windows-stable
-          draft: true
+          draft: false
           prerelease: false
           files: |
             target/x86_64-pc-windows-msvc/release/lekhani-latex.exe

@@ -39,8 +39,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Lekhani LaTeX Nightly
-          tag_name: windows-nightly-${{ github.sha }}
-          draft: true
+          tag_name: windows-nightly
+          draft: false
           prerelease: true
           files: |
             target/x86_64-pc-windows-msvc/release/lekhani-latex.exe
