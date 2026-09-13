@@ -2,7 +2,7 @@
 AppName=Lekhani Latex
 AppVersion=0.1.0
 AppPublisher=Borneel Bikash Phukan
-AppPublisherURL=https://github.com/example/lekhani-latex
+AppPublisherURL=https://borneelphukan.github.io/lekhani-latex/
 DefaultDirName={autopf}\lekhani-latex
 DefaultGroupName=Lekhani Latex
 OutputBaseFilename=lekhani-latexSetup

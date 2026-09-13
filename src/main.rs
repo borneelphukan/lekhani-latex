@@ -10,8 +10,8 @@ mod types;
 mod components;
 
 fn load_icon() -> Option<egui::IconData> {
-    let img = image::open("assets/logo.png").ok()?;
-    let img = img.into_rgba8();
+    let icon_bytes = include_bytes!("../assets/logo.png");
+    let img = image::load_from_memory(icon_bytes).ok()?.into_rgba8();
     let (width, height) = img.dimensions();
     Some(egui::IconData {
         rgba: img.into_raw(),
