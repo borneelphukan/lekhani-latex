@@ -33,8 +33,7 @@ fn main() -> Result<(), eframe::Error> {
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1280.0, 860.0])
-        .with_title("Lekhani Latex")
-        .with_transparent(true);
+        .with_title("Lekhani Latex");
     if let Some(icon) = icon {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }
