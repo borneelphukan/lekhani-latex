@@ -54,11 +54,11 @@ impl PreviewViewer {
     pub fn open_externally(&self) {
         if let Some(path) = &self.last_pdf_path {
             let path_str = path.to_string_lossy();
-        let mut c = Command::new("cmd");
-        c.args(["/c", "start", "", path_str.as_ref()]);
-        #[cfg(windows)]
-        c.creation_flags(CREATE_NO_WINDOW);
-        let _ = c.spawn();
+            let mut c = Command::new("cmd");
+            c.args(["/c", "start", "", path_str.as_ref()]);
+            #[cfg(windows)]
+            c.creation_flags(CREATE_NO_WINDOW);
+            let _ = c.spawn();
         }
     }
 
@@ -117,8 +117,7 @@ impl PreviewViewer {
                         let rgba = img.to_rgba8();
                         let size = [rgba.width() as usize, rgba.height() as usize];
                         let pixels = rgba.into_raw();
-                        let color_image =
-                            ColorImage::from_rgba_unmultiplied(size, &pixels);
+                        let color_image = ColorImage::from_rgba_unmultiplied(size, &pixels);
                         let _ = tx.send(PreviewEvent::NewImage(page, color_image));
                     }
                     Err(e) => {
@@ -136,14 +135,7 @@ impl PreviewViewer {
     }
 
     fn find_renderer() -> Option<String> {
-        for tool in &[
-            "mutool",
-            "mudraw",
-            "gswin64c",
-            "gswin32c",
-            "gs",
-            "pdftoppm",
-        ] {
+        for tool in &["mutool", "mudraw", "gswin64c", "gswin32c", "gs", "pdftoppm"] {
             let mut c = Command::new(tool);
             c.arg("--version");
             #[cfg(windows)]
@@ -208,7 +200,8 @@ impl PreviewViewer {
                     .arg(&page_str);
                 #[cfg(windows)]
                 c.creation_flags(CREATE_NO_WINDOW);
-                let out = c.output()
+                let out = c
+                    .output()
                     .map_err(|e| format!("Failed to run {}: {}", tool, e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);
@@ -231,7 +224,8 @@ impl PreviewViewer {
                 .arg(input);
                 #[cfg(windows)]
                 c.creation_flags(CREATE_NO_WINDOW);
-                let out = c.output()
+                let out = c
+                    .output()
                     .map_err(|e| format!("Failed to run {}: {}", tool, e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);
@@ -257,7 +251,8 @@ impl PreviewViewer {
                 .arg(stem_str.as_ref());
                 #[cfg(windows)]
                 c.creation_flags(CREATE_NO_WINDOW);
-                let out = c.output()
+                let out = c
+                    .output()
                     .map_err(|e| format!("Failed to run pdftoppm: {}", e))?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr);

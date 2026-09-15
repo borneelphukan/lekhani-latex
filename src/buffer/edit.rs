@@ -114,7 +114,7 @@ impl EditorBuffer {
         });
         self.text.clear();
         self.cursor = 0;
-        
+
         // Then insert new text
         self.push_undo(EditToken {
             kind: EditKind::Insert(new_text.to_string()),

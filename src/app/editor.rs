@@ -1,9 +1,9 @@
-use std::time::Instant;
-use egui::{Color32, ScrollArea, TextEdit};
 use crate::app::App;
 use crate::completions;
 use crate::lexer;
 use crate::types::Theme;
+use egui::{Color32, ScrollArea, TextEdit};
+use std::time::Instant;
 
 impl App {
     fn is_article_document(&self) -> bool {
@@ -28,20 +28,27 @@ impl App {
         let cursor = tab.buffer.cursor.min(text.len());
 
         let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let line_end = text[cursor..]
+            .find('\n')
+            .map(|i| i + cursor)
+            .unwrap_or(text.len());
         let line = text[line_start..line_end].trim();
 
-        let re = regex::Regex::new(r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{").unwrap();
-        re.captures(line).and_then(|caps| match caps.get(1).unwrap().as_str() {
-            "part" => Some("part"),
-            "chapter" => Some("chapter"),
-            "section" => Some("section"),
-            "subsection" => Some("subsection"),
-            "subsubsection" => Some("subsubsection"),
-            "paragraph" => Some("paragraph"),
-            "subparagraph" => Some("subparagraph"),
-            _ => None,
-        })
+        let re = regex::Regex::new(
+            r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{",
+        )
+        .unwrap();
+        re.captures(line)
+            .and_then(|caps| match caps.get(1).unwrap().as_str() {
+                "part" => Some("part"),
+                "chapter" => Some("chapter"),
+                "section" => Some("section"),
+                "subsection" => Some("subsection"),
+                "subsubsection" => Some("subsubsection"),
+                "paragraph" => Some("paragraph"),
+                "subparagraph" => Some("subparagraph"),
+                _ => None,
+            })
     }
 
     fn display_heading_label(heading: Option<&str>) -> String {
@@ -63,7 +70,10 @@ impl App {
         let cursor = tab.buffer.cursor.min(text.len());
 
         let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let line_end = text[cursor..]
+            .find('\n')
+            .map(|i| i + cursor)
+            .unwrap_or(text.len());
         let line = text[line_start..line_end].to_string();
         let trimmed = line.trim();
 
@@ -99,11 +109,17 @@ impl App {
         let cursor = tab.buffer.cursor.min(text.len());
 
         let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let line_end = text[cursor..].find('\n').map(|i| i + cursor).unwrap_or(text.len());
+        let line_end = text[cursor..]
+            .find('\n')
+            .map(|i| i + cursor)
+            .unwrap_or(text.len());
         let old_len = line_end - line_start;
         let line = text[line_start..line_end].to_string();
 
-        let re = regex::Regex::new(r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{").unwrap();
+        let re = regex::Regex::new(
+            r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\{",
+        )
+        .unwrap();
         if re.is_match(&line) {
             let new_line = if want_star {
                 let add_re = regex::Regex::new(r"(\\(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph))(\{)").unwrap();
@@ -136,23 +152,38 @@ impl App {
         ui.horizontal(|ui| {
             let btn_size = egui::vec2(28.0, 28.0);
 
-            if ui.add_sized(btn_size, crate::components::button::icon(
-                egui::RichText::new("B").size(14.0).strong(),
-            )).on_hover_text("Bold").clicked() {
+            if ui
+                .add_sized(
+                    btn_size,
+                    crate::components::button::icon(egui::RichText::new("B").size(14.0).strong()),
+                )
+                .on_hover_text("Bold")
+                .clicked()
+            {
                 let tab = self.active_tab_mut();
                 tab.buffer.insert_str("\\textbf{}");
                 tab.buffer.cursor -= 1;
             }
-            if ui.add_sized(btn_size, crate::components::button::icon(
-                egui::RichText::new("I").size(14.0).strong(),
-            )).on_hover_text("Italic").clicked() {
+            if ui
+                .add_sized(
+                    btn_size,
+                    crate::components::button::icon(egui::RichText::new("I").size(14.0).strong()),
+                )
+                .on_hover_text("Italic")
+                .clicked()
+            {
                 let tab = self.active_tab_mut();
                 tab.buffer.insert_str("\\textit{}");
                 tab.buffer.cursor -= 1;
             }
-            if ui.add_sized(btn_size, crate::components::button::icon(
-                egui::RichText::new("U").size(14.0).strong(),
-            )).on_hover_text("Underline").clicked() {
+            if ui
+                .add_sized(
+                    btn_size,
+                    crate::components::button::icon(egui::RichText::new("U").size(14.0).strong()),
+                )
+                .on_hover_text("Underline")
+                .clicked()
+            {
                 let tab = self.active_tab_mut();
                 tab.buffer.insert_str("\\underline{}");
                 tab.buffer.cursor -= 1;
@@ -163,7 +194,13 @@ impl App {
             crate::components::dropdown::dropdown("header_dropdown", &display_label)
                 .width(140.0)
                 .show_ui(ui, |ui| {
-                    if ui.add(egui::Button::selectable(current_heading.is_none(), "Paragraph")).clicked() {
+                    if ui
+                        .add(egui::Button::selectable(
+                            current_heading.is_none(),
+                            "Paragraph",
+                        ))
+                        .clicked()
+                    {
                         self.heading_numbered = true;
                         self.apply_heading(None, true);
                         ui.close();
@@ -184,27 +221,35 @@ impl App {
                         let is_selected = current_heading == Some(cmd);
                         let enabled = !(cmd == "chapter" && is_article);
                         let text = egui::RichText::new(label).size(size);
-                        if ui.add_enabled(enabled, egui::Button::selectable(is_selected, text)).clicked() {
+                        if ui
+                            .add_enabled(enabled, egui::Button::selectable(is_selected, text))
+                            .clicked()
+                        {
                             self.apply_heading(Some(cmd), self.heading_numbered);
                             ui.close();
                         }
                     }
                 });
 
-            if ui.checkbox(&mut self.heading_numbered, "Numbered").changed() {
+            if ui
+                .checkbox(&mut self.heading_numbered, "Numbered")
+                .changed()
+            {
                 self.toggle_heading_starred();
             }
 
             ui.separator();
             let can_undo = self.active_tab().buffer.can_undo();
-            if ui.add_enabled(can_undo, crate::components::button::standard("Undo"))
+            if ui
+                .add_enabled(can_undo, crate::components::button::standard("Undo"))
                 .on_hover_text("Ctrl+Z")
                 .clicked()
             {
                 self.active_tab_mut().buffer.undo();
             }
             let can_redo = self.active_tab().buffer.can_redo();
-            if ui.add_enabled(can_redo, crate::components::button::standard("Redo"))
+            if ui
+                .add_enabled(can_redo, crate::components::button::standard("Redo"))
                 .on_hover_text("Ctrl+Y")
                 .clicked()
             {
@@ -239,7 +284,7 @@ impl App {
                     });
                 });
         });
-        
+
         if let Some(line) = do_ai_fix_line {
             self.trigger_llm_correction_for_line(line);
         }
@@ -304,7 +349,7 @@ impl App {
 
         let tab = self.active_tab_mut();
         let mut text = std::mem::take(&mut tab.buffer.text);
-        
+
         let id_source = "editor_text_edit";
         let edit_id = ui.make_persistent_id(id_source);
         let mut selection_byte_range = None;
@@ -316,134 +361,139 @@ impl App {
                     let min_char = range.primary.index.min(range.secondary.index);
                     let max_char = range.primary.index.max(range.secondary.index);
                     if min_char < max_char {
-                        let min_byte = text.char_indices().nth(min_char).map_or(text.len(), |(b, _)| b);
-                        let max_byte = text.char_indices().nth(max_char).map_or(text.len(), |(b, _)| b);
+                        let min_byte = text
+                            .char_indices()
+                            .nth(min_char)
+                            .map_or(text.len(), |(b, _)| b);
+                        let max_byte = text
+                            .char_indices()
+                            .nth(max_char)
+                            .map_or(text.len(), |(b, _)| b);
                         selection_byte_range = Some(min_byte..max_byte);
                     }
                 }
             }
         }
         let selection_bg = ctx.global_style().visuals.selection.bg_fill;
-        
+
         let error_lines_for_layout = error_lines.clone();
 
-        let mut layouter =
-            move |layouter_ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-                let text = buf.as_str();
-                let tokens = lexer::tokenize(text);
+        let mut layouter = move |layouter_ui: &egui::Ui,
+                                 buf: &dyn egui::TextBuffer,
+                                 wrap_width: f32| {
+            let text = buf.as_str();
+            let tokens = lexer::tokenize(text);
 
-                let syn = theme.syntax_colors(&ctx);
+            let syn = theme.syntax_colors(&ctx);
 
-                let mut line_starts = vec![0usize];
-                for (i, c) in text.char_indices() {
-                    if c == '\n' {
-                        line_starts.push(i + 1);
-                    }
+            let mut line_starts = vec![0usize];
+            for (i, c) in text.char_indices() {
+                if c == '\n' {
+                    line_starts.push(i + 1);
                 }
+            }
 
-                let line_of = |pos: usize| -> usize {
-                    match line_starts.binary_search(&pos) {
-                        Ok(i) => i + 1,
-                        Err(i) => i,
-                    }
+            let line_of = |pos: usize| -> usize {
+                match line_starts.binary_search(&pos) {
+                    Ok(i) => i + 1,
+                    Err(i) => i,
+                }
+            };
+
+            let err_bg = if ctx.global_style().visuals.dark_mode {
+                Color32::from_rgb(90, 50, 55)
+            } else {
+                Color32::from_rgb(255, 200, 200)
+            };
+
+            let mut sections = Vec::new();
+            for token in tokens {
+                let color = match token.token_type {
+                    lexer::TokenType::Command => syn.cmd,
+                    lexer::TokenType::MathDollar | lexer::TokenType::MathDoubleDollar => syn.math,
+                    lexer::TokenType::OpenBrace | lexer::TokenType::CloseBrace => syn.brace,
+                    lexer::TokenType::Comment => syn.comment,
+                    lexer::TokenType::Text => syn.text,
                 };
-
-                let err_bg = if ctx.global_style().visuals.dark_mode {
-                    Color32::from_rgb(90, 50, 55)
+                let line = line_of(token.start);
+                let base_bg = if error_lines_for_layout.contains(&line) {
+                    err_bg
                 } else {
-                    Color32::from_rgb(255, 200, 200)
+                    Color32::TRANSPARENT
                 };
 
-                let mut sections = Vec::new();
-                for token in tokens {
-                    let color = match token.token_type {
-                        lexer::TokenType::Command => syn.cmd,
-                        lexer::TokenType::MathDollar
-                        | lexer::TokenType::MathDoubleDollar => syn.math,
-                        lexer::TokenType::OpenBrace
-                        | lexer::TokenType::CloseBrace => syn.brace,
-                        lexer::TokenType::Comment => syn.comment,
-                        lexer::TokenType::Text => syn.text,
-                    };
-                    let line = line_of(token.start);
-                    let base_bg = if error_lines_for_layout.contains(&line) {
-                        err_bg
-                    } else {
-                        Color32::TRANSPARENT
-                    };
-                    
-                    if let Some(sel) = &selection_byte_range {
-                        let overlap_start = token.start.max(sel.start);
-                        let overlap_end = token.end.min(sel.end);
-                        if overlap_start < overlap_end {
-                            if token.start < overlap_start {
-                                sections.push(egui::text::LayoutSection {
-                                    leading_space: 0.0,
-                                    byte_range: token.start..overlap_start,
-                                    format: egui::text::TextFormat {
-                                        font_id: egui::FontId::monospace(14.0),
-                                        color,
-                                        background: base_bg,
-                                        ..Default::default()
-                                    }
-                                });
-                            }
+                if let Some(sel) = &selection_byte_range {
+                    let overlap_start = token.start.max(sel.start);
+                    let overlap_end = token.end.min(sel.end);
+                    if overlap_start < overlap_end {
+                        if token.start < overlap_start {
                             sections.push(egui::text::LayoutSection {
                                 leading_space: 0.0,
-                                byte_range: overlap_start..overlap_end,
+                                byte_range: token.start..overlap_start,
                                 format: egui::text::TextFormat {
                                     font_id: egui::FontId::monospace(14.0),
                                     color,
-                                    background: selection_bg,
+                                    background: base_bg,
                                     ..Default::default()
-                                }
+                                },
                             });
-                            if overlap_end < token.end {
-                                sections.push(egui::text::LayoutSection {
-                                    leading_space: 0.0,
-                                    byte_range: overlap_end..token.end,
-                                    format: egui::text::TextFormat {
-                                        font_id: egui::FontId::monospace(14.0),
-                                        color,
-                                        background: base_bg,
-                                        ..Default::default()
-                                    }
-                                });
-                            }
-                            continue;
                         }
+                        sections.push(egui::text::LayoutSection {
+                            leading_space: 0.0,
+                            byte_range: overlap_start..overlap_end,
+                            format: egui::text::TextFormat {
+                                font_id: egui::FontId::monospace(14.0),
+                                color,
+                                background: selection_bg,
+                                ..Default::default()
+                            },
+                        });
+                        if overlap_end < token.end {
+                            sections.push(egui::text::LayoutSection {
+                                leading_space: 0.0,
+                                byte_range: overlap_end..token.end,
+                                format: egui::text::TextFormat {
+                                    font_id: egui::FontId::monospace(14.0),
+                                    color,
+                                    background: base_bg,
+                                    ..Default::default()
+                                },
+                            });
+                        }
+                        continue;
                     }
-
-                    sections.push(egui::text::LayoutSection {
-                        leading_space: 0.0,
-                        byte_range: token.start..token.end,
-                        format: egui::text::TextFormat {
-                            font_id: egui::FontId::monospace(14.0),
-                            color,
-                            background: base_bg,
-                            ..Default::default()
-                        },
-                    });
                 }
 
-                let job = egui::text::LayoutJob {
-                    text: text.into(),
-                    sections,
-                    wrap: egui::text::TextWrapping {
-                        max_width: wrap_width,
+                sections.push(egui::text::LayoutSection {
+                    leading_space: 0.0,
+                    byte_range: token.start..token.end,
+                    format: egui::text::TextFormat {
+                        font_id: egui::FontId::monospace(14.0),
+                        color,
+                        background: base_bg,
                         ..Default::default()
                     },
-                    ..Default::default()
-                };
+                });
+            }
 
-                layouter_ui.fonts_mut(|f| f.layout_job(job))
+            let job = egui::text::LayoutJob {
+                text: text.into(),
+                sections,
+                wrap: egui::text::TextWrapping {
+                    max_width: wrap_width,
+                    ..Default::default()
+                },
+                ..Default::default()
             };
+
+            layouter_ui.fonts_mut(|f| f.layout_job(job))
+        };
 
         let id_source = "editor_text_edit";
         let edit_id = ui.make_persistent_id(id_source);
-        
+
         let previous_state = egui::TextEdit::load_state(ui.ctx(), edit_id);
-        
+
         let mut tab_pressed = false;
         if ui.memory(|mem| mem.has_focus(edit_id)) {
             ui.input_mut(|i| {
@@ -461,23 +511,24 @@ impl App {
             .lock_focus(true)
             .layouter(&mut layouter)
             .show(ui);
-        
+
         let mut cursor_screen_pos = output.response.rect.left_bottom();
         if let Some(range) = &output.cursor_range {
             let cursor_rect = output.galley.pos_from_cursor(range.primary);
             cursor_screen_pos = output.galley_pos + cursor_rect.left_bottom().to_vec2();
         }
-        
+
         let response = output.response;
-        
+
         let secondary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
-        let secondary_released = ui.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
+        let secondary_released =
+            ui.input(|i| i.pointer.button_released(egui::PointerButton::Secondary));
         if secondary_down || secondary_released || response.secondary_clicked() {
             if let Some(state) = previous_state {
                 state.store(ui.ctx(), response.id);
             }
         }
-        
+
         let cursor_char = egui::TextEdit::load_state(ui.ctx(), response.id)
             .and_then(|state| state.cursor.char_range())
             .map_or(0, |range| range.primary.index);
@@ -486,11 +537,11 @@ impl App {
             .nth(cursor_char)
             .map_or(text.len(), |(b, _)| b);
         let mut changed = response.changed();
-        
+
         if tab_pressed {
             text.insert_str(cursor_pos, "    ");
             changed = true;
-            
+
             if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
                 if let Some(mut range) = state.cursor.char_range() {
                     range.primary.index += 4;
@@ -501,15 +552,20 @@ impl App {
             }
             cursor_pos += 4;
         }
-        
+
         let mut do_cut = false;
         let mut do_copy = false;
         let mut do_paste = false;
         let mut do_select_all = false;
         let mut do_ai_fix = false;
-        
-        let current_line = text.chars().take(cursor_char).filter(|&c| c == '\n').count() + 1;
-        
+
+        let current_line = text
+            .chars()
+            .take(cursor_char)
+            .filter(|&c| c == '\n')
+            .count()
+            + 1;
+
         if let Some(pos) = response.hover_pos() {
             let local_pos = pos - output.galley_pos;
             let cursor = output.galley.cursor_from_pos(local_pos);
@@ -517,14 +573,19 @@ impl App {
             let hover_line = text.chars().take(hover_char).filter(|&c| c == '\n').count() + 1;
             ui.data_mut(|d| d.insert_temp(response.id.with("hover_line"), hover_line));
         }
-        let stored_line = ui.data(|d| d.get_temp(response.id.with("hover_line"))).unwrap_or(current_line);
-        
+        let stored_line = ui
+            .data(|d| d.get_temp(response.id.with("hover_line")))
+            .unwrap_or(current_line);
+
         let can_ai_fix = self.llm_configured;
         let has_error = self.active_tab().error_message.is_some();
 
         response.context_menu(|ui| {
             if can_ai_fix {
-                if ui.add_enabled(has_error, egui::Button::new("✨ Fix with AI")).clicked() {
+                if ui
+                    .add_enabled(has_error, egui::Button::new("✨ Fix with AI"))
+                    .clicked()
+                {
                     do_ai_fix = true;
                     ui.close();
                 }
@@ -558,16 +619,23 @@ impl App {
                     let min = range.primary.index.min(range.secondary.index);
                     let max = range.primary.index.max(range.secondary.index);
                     if min < max {
-                        let selected_text: String = text.chars().skip(min).take(max - min).collect();
+                        let selected_text: String =
+                            text.chars().skip(min).take(max - min).collect();
                         ui.ctx().copy_text(selected_text);
                         if do_cut {
-                            let min_byte = text.char_indices().nth(min).map_or(text.len(), |(b, _)| b);
-                            let max_byte = text.char_indices().nth(max).map_or(text.len(), |(b, _)| b);
+                            let min_byte =
+                                text.char_indices().nth(min).map_or(text.len(), |(b, _)| b);
+                            let max_byte =
+                                text.char_indices().nth(max).map_or(text.len(), |(b, _)| b);
                             text.replace_range(min_byte..max_byte, "");
                             changed = true;
-                            
+
                             let mut new_state = state;
-                            new_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(min))));
+                            new_state
+                                .cursor
+                                .set_char_range(Some(egui::text::CCursorRange::one(
+                                    egui::text::CCursor::new(min),
+                                )));
                             new_state.store(ui.ctx(), response.id);
                             cursor_pos = min_byte;
                         }
@@ -591,17 +659,27 @@ impl App {
                         min_char = range.primary.index.min(range.secondary.index);
                         max_char = range.primary.index.max(range.secondary.index);
                     }
-                    let min_byte = text.char_indices().nth(min_char).map_or(text.len(), |(b, _)| b);
-                    let max_byte = text.char_indices().nth(max_char).map_or(text.len(), |(b, _)| b);
-                    
+                    let min_byte = text
+                        .char_indices()
+                        .nth(min_char)
+                        .map_or(text.len(), |(b, _)| b);
+                    let max_byte = text
+                        .char_indices()
+                        .nth(max_char)
+                        .map_or(text.len(), |(b, _)| b);
+
                     text.replace_range(min_byte..max_byte, &clipboard);
                     changed = true;
-                    
+
                     let pasted_chars = clipboard.chars().count();
                     let new_cursor_char = min_char + pasted_chars;
-                    
+
                     let mut new_state = state;
-                    new_state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(new_cursor_char))));
+                    new_state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(
+                            egui::text::CCursor::new(new_cursor_char),
+                        )));
                     new_state.store(ui.ctx(), response.id);
                     cursor_pos = min_byte + clipboard.len();
                 }
@@ -611,14 +689,16 @@ impl App {
         if do_select_all {
             if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
                 let char_count = text.chars().count();
-                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                    egui::text::CCursor::new(0),
-                    egui::text::CCursor::new(char_count)
-                )));
+                state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(0),
+                        egui::text::CCursor::new(char_count),
+                    )));
                 state.store(ui.ctx(), response.id);
             }
         }
-        
+
         if changed {
             self.last_content_change = Some(Instant::now());
         }
@@ -630,7 +710,11 @@ impl App {
         }
 
         let mut close_completion = nav_enter;
-        let mut selected_idx = if nav_enter { Some(self.completion_selected) } else { None };
+        let mut selected_idx = if nav_enter {
+            Some(self.completion_selected)
+        } else {
+            None
+        };
 
         if nav_escape {
             self.completion_visible = false;
@@ -645,7 +729,8 @@ impl App {
         }
         if nav_down {
             if !self.completion_matches.is_empty() {
-                self.completion_selected = (self.completion_selected + 1) % self.completion_matches.len();
+                self.completion_selected =
+                    (self.completion_selected + 1) % self.completion_matches.len();
             }
         }
 
@@ -708,9 +793,15 @@ impl App {
                             tab.buffer.cursor = cursor_pos;
                             tab.buffer.sync_after_edit();
                             changed = true;
-                            
-                            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
-                                state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_pos))));
+
+                            if let Some(mut state) =
+                                egui::TextEdit::load_state(ui.ctx(), response.id)
+                            {
+                                state
+                                    .cursor
+                                    .set_char_range(Some(egui::text::CCursorRange::one(
+                                        egui::text::CCursor::new(cursor_pos),
+                                    )));
                                 state.store(ui.ctx(), response.id);
                             }
                             ui.memory_mut(|m| m.request_focus(response.id));
@@ -723,7 +814,8 @@ impl App {
             self.completion_block_trigger = true;
         }
 
-        let clicked_outside = ui.input(|i| i.pointer.any_click()) && !close_completion && !response.hovered();
+        let clicked_outside =
+            ui.input(|i| i.pointer.any_click()) && !close_completion && !response.hovered();
         if clicked_outside {
             self.completion_visible = false;
             self.completion_prefix.clear();
@@ -731,7 +823,10 @@ impl App {
 
         if !close_completion {
             let evaluate = changed || self.completion_visible;
-            if (response.has_focus() || ui.memory(|m| m.has_focus(response.id))) && cursor_pos > 0 && evaluate {
+            if (response.has_focus() || ui.memory(|m| m.has_focus(response.id)))
+                && cursor_pos > 0
+                && evaluate
+            {
                 self.completion_block_trigger = false;
                 let text = &self.active_tab().buffer.text;
                 let cursor = cursor_pos.min(text.len());
@@ -743,7 +838,8 @@ impl App {
                     if partial.len() >= 1 && partial[1..].chars().all(|c| c.is_alphanumeric()) {
                         let matches = completions::find_completions(partial);
                         if !matches.is_empty() {
-                            let new_matches: Vec<String> = matches.into_iter().map(|s| s.to_string()).collect();
+                            let new_matches: Vec<String> =
+                                matches.into_iter().map(|s| s.to_string()).collect();
                             let prefix = partial.to_string();
                             let prefix_changed = prefix != self.completion_prefix;
                             self.completion_visible = true;
@@ -754,7 +850,9 @@ impl App {
                             if prefix_changed {
                                 self.completion_selected = 0;
                             } else {
-                                self.completion_selected = self.completion_selected.min(self.completion_matches.len().saturating_sub(1));
+                                self.completion_selected = self
+                                    .completion_selected
+                                    .min(self.completion_matches.len().saturating_sub(1));
                             }
                         }
                     }
@@ -764,7 +862,7 @@ impl App {
                 }
             }
         }
-        
+
         if do_ai_fix {
             Some(stored_line)
         } else {

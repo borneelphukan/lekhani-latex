@@ -1,17 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use crate::app::App;
 use crate::app::tab::Tab;
+use crate::app::App;
 use crate::buffer::EditorBuffer;
 fn project_tex_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new("."));
     let file_name = path
         .file_name()
         .unwrap_or(std::ffi::OsStr::new("document.tex"));
-    let project_folder = parent.join(
-        path.file_stem()
-            .unwrap_or(std::ffi::OsStr::new("document")),
-    );
+    let project_folder = parent.join(path.file_stem().unwrap_or(std::ffi::OsStr::new("document")));
     project_folder.join(file_name)
 }
 
@@ -31,30 +28,31 @@ impl App {
             ui.menu_button("File", |ui| {
                 if ui.button("New Document").clicked() {
                     ui.close();
-                    self.file_dialog_action =
-                        Some(crate::app::FileDialogAction::NewDocument);
+                    self.file_dialog_action = Some(crate::app::FileDialogAction::NewDocument);
                 }
                 if ui.button("Open…").clicked() {
                     ui.close();
-                    self.file_dialog_action =
-                        Some(crate::app::FileDialogAction::Open);
+                    self.file_dialog_action = Some(crate::app::FileDialogAction::Open);
                 }
                 let has_tabs = !self.tabs.is_empty();
-                if ui.add_enabled(has_tabs, crate::components::button::standard("Save")).clicked() {
+                if ui
+                    .add_enabled(has_tabs, crate::components::button::standard("Save"))
+                    .clicked()
+                {
                     ui.close();
-                    self.file_dialog_action =
-                        Some(crate::app::FileDialogAction::Save);
+                    self.file_dialog_action = Some(crate::app::FileDialogAction::Save);
                 }
-                if ui.add_enabled(has_tabs, crate::components::button::standard("Save As…")).clicked() {
+                if ui
+                    .add_enabled(has_tabs, crate::components::button::standard("Save As…"))
+                    .clicked()
+                {
                     ui.close();
-                    self.file_dialog_action =
-                        Some(crate::app::FileDialogAction::SaveAs);
+                    self.file_dialog_action = Some(crate::app::FileDialogAction::SaveAs);
                 }
                 ui.separator();
                 if ui.button("Quit").clicked() {
                     ui.close();
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::Close);
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
 
@@ -64,10 +62,24 @@ impl App {
                     ui.visuals_mut().selection.bg_fill = egui::Color32::from_rgb(40, 40, 40);
                 }
 
-                let preview_active = if has_tabs { self.active_tab().show_preview } else { false };
-                let preview_text = if preview_active { "✔ Toggle Preview" } else { "    Toggle Preview" };
-                
-                if ui.add_enabled(has_tabs, crate::components::button::standard(preview_text).selected(preview_active)).clicked() {
+                let preview_active = if has_tabs {
+                    self.active_tab().show_preview
+                } else {
+                    false
+                };
+                let preview_text = if preview_active {
+                    "✔ Toggle Preview"
+                } else {
+                    "    Toggle Preview"
+                };
+
+                if ui
+                    .add_enabled(
+                        has_tabs,
+                        crate::components::button::standard(preview_text).selected(preview_active),
+                    )
+                    .clicked()
+                {
                     ui.close();
                     let tab = self.active_tab_mut();
                     tab.show_preview = !tab.show_preview;
@@ -77,34 +89,51 @@ impl App {
                         "Preview hidden".into()
                     };
                 }
-                
+
                 let fs = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
-                let fs_text = if fs { "✔ Fullscreen    F12" } else { "    Fullscreen    F12" };
-                
-                if ui.add(crate::components::button::standard(fs_text).selected(fs)).clicked() {
+                let fs_text = if fs {
+                    "✔ Fullscreen    F12"
+                } else {
+                    "    Fullscreen    F12"
+                };
+
+                if ui
+                    .add(crate::components::button::standard(fs_text).selected(fs))
+                    .clicked()
+                {
                     ui.close();
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fs));
                 }
             });
 
             ui.menu_button("Settings", |ui| {
                 ui.set_min_width(220.0);
-                
+
                 ui.menu_button("Theme", |ui| {
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::System, "System").clicked() {
+                    if ui
+                        .radio_value(&mut self.theme, crate::types::Theme::System, "System")
+                        .clicked()
+                    {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::Light, "Light").clicked() {
+                    if ui
+                        .radio_value(&mut self.theme, crate::types::Theme::Light, "Light")
+                        .clicked()
+                    {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::Dark, "Dark").clicked() {
+                    if ui
+                        .radio_value(&mut self.theme, crate::types::Theme::Dark, "Dark")
+                        .clicked()
+                    {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }
                 });
-                
+
                 if ui.button("AI Integration").clicked() {
                     self.show_llm_settings = true;
                     ui.close();
@@ -130,7 +159,7 @@ impl App {
         if self.tabs.is_empty() {
             return;
         }
-        
+
         let mut cmd = std::process::Command::new("pdflatex");
         cmd.arg("--version");
         #[cfg(windows)]
@@ -138,12 +167,12 @@ impl App {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
-        
+
         let is_missing = match cmd.output() {
             Ok(output) => !output.status.success(),
             Err(e) => e.kind() == std::io::ErrorKind::NotFound,
         };
-        
+
         if is_missing {
             self.show_compiler_dialog = true;
             return;
@@ -154,14 +183,12 @@ impl App {
         let path = tab.buffer.path().map(|p| p.to_path_buf());
         if let Some(ref path) = path {
             if let Err(e) = std::fs::write(path, &tab.buffer.text) {
-                tab.error_message =
-                    Some(format!("Failed to write file for compile: {}", e));
+                tab.error_message = Some(format!("Failed to write file for compile: {}", e));
                 return;
             }
             tab.compiler.compile(path);
         } else {
-            tab.error_message =
-                Some("Please save the file before compiling.".into());
+            tab.error_message = Some("Please save the file before compiling.".into());
         }
     }
 
@@ -180,22 +207,34 @@ impl App {
         self.llm_correction_in_progress = true;
         let tab = self.active_tab_mut();
         tab.ai_output_log.clear();
-        
+
         let mut text = tab.buffer.text.clone();
         if let Some(l) = target_line {
             if let Some(line_text) = text.lines().nth(l.saturating_sub(1)) {
                 text = line_text.to_string();
             }
         }
-        
+
         let errors = tab.error_message.clone().unwrap_or_default();
         let tx = self.llm_tx.clone();
         let api_key = self.llm_api_key.clone();
         let use_local = self.llm_settings_tab_index == 0;
-        let model = if self.llm_custom_model.is_empty() { self.llm_model.clone() } else { self.llm_custom_model.clone() };
-        let model = if model.is_empty() { "gpt-4o-mini".to_string() } else { model };
-        let endpoint = if use_local { self.llm_endpoint_url.clone() } else { "https://api.openai.com/v1/chat/completions".to_string() };
-        
+        let model = if self.llm_custom_model.is_empty() {
+            self.llm_model.clone()
+        } else {
+            self.llm_custom_model.clone()
+        };
+        let model = if model.is_empty() {
+            "gpt-4o-mini".to_string()
+        } else {
+            model
+        };
+        let endpoint = if use_local {
+            self.llm_endpoint_url.clone()
+        } else {
+            "https://api.openai.com/v1/chat/completions".to_string()
+        };
+
         std::thread::spawn(move || {
             let prompt = if target_line.is_some() {
                 format!(
@@ -208,31 +247,35 @@ impl App {
                     errors, text
                 )
             };
-            
+
             let body = serde_json::to_string(&serde_json::json!({
                 "model": model,
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
-            })).unwrap_or_default();
+            }))
+            .unwrap_or_default();
 
             let request = ureq::post(&endpoint)
                 .header("Authorization", &format!("Bearer {}", api_key))
                 .header("Content-Type", "application/json")
                 .send(body);
-                
+
             match request {
                 Ok(response) => {
                     use std::io::Read;
                     let mut reader = response.into_body().into_reader();
                     let mut body_str = String::new();
                     let _ = reader.read_to_string(&mut body_str);
-                    
+
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_str) {
                         if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
                             let content = content.trim();
                             let parsed = if content.starts_with("```json") {
-                                let c = content.trim_start_matches("```json").trim_end_matches("```").trim();
+                                let c = content
+                                    .trim_start_matches("```json")
+                                    .trim_end_matches("```")
+                                    .trim();
                                 serde_json::from_str::<serde_json::Value>(c)
                             } else {
                                 serde_json::from_str::<serde_json::Value>(content)
@@ -244,29 +287,42 @@ impl App {
                                         obj = first.clone();
                                     }
                                 }
-                                let explanation = obj.get("explanation").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                let explanation = obj
+                                    .get("explanation")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
                                 if let Some(action) = obj.get("action").and_then(|v| v.as_str()) {
                                     if action == "install" {
-                                        if let Some(pkg) = obj.get("package").and_then(|v| v.as_str()) {
-                                            let _ = tx.send(Ok(crate::app::LlmAction::InstallPackage {
-                                                package: pkg.to_string(),
-                                                explanation,
-                                            }));
+                                        if let Some(pkg) =
+                                            obj.get("package").and_then(|v| v.as_str())
+                                        {
+                                            let _ = tx.send(Ok(
+                                                crate::app::LlmAction::InstallPackage {
+                                                    package: pkg.to_string(),
+                                                    explanation,
+                                                },
+                                            ));
                                             return;
                                         }
                                     } else if action == "correct" {
-                                        if let Some(corrected_text) = obj.get("text").and_then(|v| v.as_str()) {
-                                            let _ = tx.send(Ok(crate::app::LlmAction::Correction {
-                                                text: corrected_text.to_string(),
-                                                line: target_line,
-                                                explanation,
-                                            }));
+                                        if let Some(corrected_text) =
+                                            obj.get("text").and_then(|v| v.as_str())
+                                        {
+                                            let _ =
+                                                tx.send(Ok(crate::app::LlmAction::Correction {
+                                                    text: corrected_text.to_string(),
+                                                    line: target_line,
+                                                    explanation,
+                                                }));
                                             return;
                                         }
                                     }
                                 }
                             }
-                            let _ = tx.send(Err(format!("Invalid response format from LLM. Raw response: {}", content)));
+                            let _ = tx.send(Err(format!(
+                                "Invalid response format from LLM. Raw response: {}",
+                                content
+                            )));
                         } else {
                             let _ = tx.send(Err("No content in LLM response".to_string()));
                         }
@@ -307,7 +363,11 @@ impl App {
             .add_filter("LaTeX", &["tex", "sty", "cls"])
             .pick_file()
         {
-            if let Some(existing) = self.tabs.iter().position(|t| t.buffer.path() == Some(&path)) {
+            if let Some(existing) = self
+                .tabs
+                .iter()
+                .position(|t| t.buffer.path() == Some(&path))
+            {
                 self.active_tab = existing;
                 return;
             }
@@ -335,8 +395,7 @@ impl App {
                     }
                 }
                 Err(e) => {
-                    tab.error_message =
-                        Some(format!("Failed to save: {}", e));
+                    tab.error_message = Some(format!("Failed to save: {}", e));
                 }
             }
         } else {
@@ -364,15 +423,13 @@ impl App {
                         .and_then(|s| s.to_str())
                         .unwrap_or("Untitled")
                         .to_string();
-                    tab.status_message =
-                        format!("Saved as {}", tex_path.display());
+                    tab.status_message = format!("Saved as {}", tex_path.display());
                     if auto {
                         tab.compiler.compile(&tex_path);
                     }
                 }
                 Err(e) => {
-                    tab.error_message =
-                        Some(format!("Failed to save: {}", e));
+                    tab.error_message = Some(format!("Failed to save: {}", e));
                 }
             }
         }

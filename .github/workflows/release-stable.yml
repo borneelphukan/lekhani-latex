@@ -35,8 +35,9 @@ jobs:
 
       # build.rs embeds the icon only when assets/logo.ico exists.
       # ImageMagick is pre-installed on windows-latest runners.
+      # ICO format supports a maximum size of 256x256.
       - name: Generate logo.ico from logo.png
-        run: magick assets/logo.png assets/logo.ico
+        run: magick assets/logo.png -resize 256x256 assets/logo.ico
 
       - name: Build release binary
         run: cargo build --release
