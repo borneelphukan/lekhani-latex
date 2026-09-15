@@ -1,6 +1,6 @@
-use egui::Color32;
 use crate::app::App;
 use crate::compiler::CompileStatus;
+use egui::Color32;
 
 impl App {
     pub(crate) fn status_bar(&mut self, ui: &mut egui::Ui) {
@@ -31,7 +31,12 @@ impl App {
                 Color32::GRAY,
                 format!(
                     "{}{} | Ln {}, Col {} | {}{}",
-                    path, dirty, line, col + 1, tab.status_message, compile_status,
+                    path,
+                    dirty,
+                    line,
+                    col + 1,
+                    tab.status_message,
+                    compile_status,
                 ),
             );
         });

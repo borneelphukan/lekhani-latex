@@ -119,7 +119,10 @@ impl EditorBuffer {
     pub fn indentation_at_cursor(&self) -> String {
         let (line, _) = self.cursor_line_col();
         if let Some(text) = self.line_text(line) {
-            let indent: String = text.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+            let indent: String = text
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .collect();
             indent
         } else {
             String::new()

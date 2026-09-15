@@ -4,10 +4,10 @@ mod app;
 mod buffer;
 mod compiler;
 mod completions;
+mod components;
 mod lexer;
 mod preview;
 mod types;
-mod components;
 
 fn load_icon() -> Option<egui::IconData> {
     let icon_bytes = include_bytes!("../assets/logo.png");

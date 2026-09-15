@@ -23,4 +23,3 @@ fn main() {
         println!("cargo:rustc-env=GIT_BRANCH=unknown");
     }
 }
-

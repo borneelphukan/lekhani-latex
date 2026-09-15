@@ -1,17 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
-use std::thread;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
+use std::thread;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-use crate::types::CompilerConfig;
 use super::parser::{extract_errors, extract_warnings, read_log_fatal};
+use crate::types::CompilerConfig;
 
 #[derive(Debug, Clone)]
 pub enum CompileEvent {
@@ -58,7 +58,9 @@ impl CompilerBridge {
             #[cfg(unix)]
             let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
             #[cfg(windows)]
-            let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .output();
         }
 
         // Join any previous compilation thread before starting a new one
@@ -123,7 +125,7 @@ impl CompilerBridge {
                 .unwrap_or("output");
 
             let output_dir = parent_dir.join(file_stem);
-            
+
             // Create the output directory if it does not exist
             let _ = std::fs::create_dir_all(&output_dir);
 
@@ -139,7 +141,10 @@ impl CompilerBridge {
             let tex_arg = path.to_string_lossy().to_string();
             let mut cmd = Command::new(&config.command);
             cmd.args(&config.args)
-                .arg(format!("-output-directory={}", output_dir.to_string_lossy()))
+                .arg(format!(
+                    "-output-directory={}",
+                    output_dir.to_string_lossy()
+                ))
                 .arg(&tex_arg)
                 .current_dir(parent_dir);
             #[cfg(windows)]
@@ -180,7 +185,10 @@ impl CompilerBridge {
                         }
                         Err(e) => {
                             active_pid.store(0, Ordering::SeqCst);
-                            let _ = tx.send(CompileEvent::Failure(vec![format!("Failed to wait for '{}': {}", config.command, e)]));
+                            let _ = tx.send(CompileEvent::Failure(vec![format!(
+                                "Failed to wait for '{}': {}",
+                                config.command, e
+                            )]));
                         }
                     }
                 }
@@ -231,6 +239,5 @@ impl CompilerBridge {
 }
 
 impl Drop for CompilerBridge {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
