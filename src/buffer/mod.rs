@@ -28,6 +28,7 @@ impl EditorBuffer {
             "\n",
             "% Preamble (Packages and Settings)\n",
             "\\usepackage[utf8]{inputenc} % Ensures correct character encoding\n",
+            "\\usepackage{hyperref} % Enables clickable links and citations\n",
             "\n",
             "\\title{Document Title}\n",
             "\\author{Author Name}\n",
