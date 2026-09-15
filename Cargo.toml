@@ -1,6 +1,6 @@
 [package]
 name = "lekhani-latex"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 description = "A modern, easy-to-use LaTeX editor with live preview"
 license = "MIT"
