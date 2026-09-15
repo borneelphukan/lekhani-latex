@@ -1,0 +1,86 @@
+name: Release Nightly (Windows)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'setup.iss'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-nightly
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    name: Build & publish nightly release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Bump version and commit
+        run: |
+          $cargo = Get-Content Cargo.toml
+          $versionLine = $cargo | Select-String -Pattern '^version = "(.*?)"$'
+          $currentVersion = $versionLine.Matches.Groups[1].Value
+          
+          $parts = $currentVersion.Split('.')
+          $parts[2] = [int]$parts[2] + 1
+          $newVersion = $parts -join '.'
+          
+          Write-Host "Bumping version from $currentVersion to $newVersion"
+          
+          (Get-Content Cargo.toml) -replace "^version = `"$currentVersion`"$", "version = `"$newVersion`"" | Set-Content Cargo.toml
+          (Get-Content setup.iss) -replace "^AppVersion=$currentVersion$", "AppVersion=$newVersion" | Set-Content setup.iss
+          
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml setup.iss
+          # We only commit if there are changes
+          if (git diff --cached --quiet) {
+            Write-Host "No changes to commit"
+          } else {
+            git commit -m "chore: bump version to $newVersion [skip ci]"
+            git push
+          }
+
+      # build.rs embeds the icon only when assets/logo.ico exists.
+      # ImageMagick is pre-installed on windows-latest runners.
+      - name: Generate logo.ico from logo.png
+        run: magick assets/logo.png assets/logo.ico
+
+      - name: Build release binary
+        run: cargo build --release
+
+      # Delete the old rolling tag/release so the asset URL stays stable.
+      - name: Publish to windows-nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-nightly
+          name: "Nightly Release"
+          body: |
+            **Nightly build** from the `dev` branch.
+
+            > ⚠️ This is a pre-release build and may contain bugs or unfinished features.
+            > For a stable experience use the [Stable Release](https://github.com/borneelphukan/lekhani-latex/releases/tag/windows-stable).
+
+            **Commit:** ${{ github.sha }}
+            **Built:** ${{ github.event.head_commit.timestamp }}
+          prerelease: true
+          make_latest: false
+          files: target/release/lekhani-latex.exe

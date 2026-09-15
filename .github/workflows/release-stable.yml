@@ -1,0 +1,60 @@
+name: Release Stable (Windows)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+      - 'setup.iss'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-stable
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    name: Build & publish stable release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # build.rs embeds the icon only when assets/logo.ico exists.
+      # ImageMagick is pre-installed on windows-latest runners.
+      - name: Generate logo.ico from logo.png
+        run: magick assets/logo.png assets/logo.ico
+
+      - name: Build release binary
+        run: cargo build --release
+
+      # Delete the old rolling tag/release so the asset URL stays stable.
+      - name: Publish to windows-stable release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-stable
+          name: "Stable Release"
+          body: |
+            **Stable build** from the `main` branch.
+
+            This release is automatically updated on every push to `main`.
+            It is the recommended download for most users.
+
+            **Commit:** ${{ github.sha }}
+            **Built:** ${{ github.event.head_commit.timestamp }}
+          prerelease: false
+          make_latest: true
+          files: target/release/lekhani-latex.exe
