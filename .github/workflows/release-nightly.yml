@@ -68,6 +68,10 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      # Inno Setup is pre-installed on windows-latest runners.
+      - name: Build Windows installer with Inno Setup
+        run: iscc setup.iss
+
       # Delete the old rolling tag/release so the asset URL stays stable.
       - name: Publish to windows-nightly release
         uses: softprops/action-gh-release@v2
@@ -84,4 +88,4 @@ jobs:
             **Built:** ${{ github.event.head_commit.timestamp }}
           prerelease: true
           make_latest: false
-          files: target/release/lekhani-latex.exe
+          files: Output/lekhani-latexSetup.exe
