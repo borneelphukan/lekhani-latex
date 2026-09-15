@@ -1,6 +1,6 @@
 [Setup]
 AppName=Lekhani Latex
-AppVersion=0.0.1
+AppVersion=0.0.2
 AppPublisher=Borneel Bikash Phukan
 AppPublisherURL=https://borneelphukan.github.io/lekhani-latex/
 DefaultDirName={autopf}\lekhani-latex
