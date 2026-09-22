@@ -20,7 +20,7 @@ export default function Download() {
             </div>
             <div>
               <h2 className="text-2xl font-serif text-gray-900">Stable Release</h2>
-              <span className="text-sm font-medium text-brand-600">From main branch</span>
+              <span className="text-sm font-medium text-brand-600">v0.0.4</span>
             </div>
           </div>
           
@@ -48,7 +48,7 @@ export default function Download() {
             </div>
             <div>
               <h2 className="text-2xl font-serif text-gray-900">Nightly Release</h2>
-              <span className="text-sm font-medium text-purple-600">From dev branch</span>
+              <span className="text-sm font-medium text-purple-600">v0.0.3</span>
             </div>
           </div>
           

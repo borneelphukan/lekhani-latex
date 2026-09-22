@@ -1,4 +1,4 @@
-name: Release Nightly (Windows)
+name: Release Nightly
 
 on:
   push:
@@ -20,34 +20,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-release:
-    name: Build & publish nightly release
+  bump-version:
+    name: Bump version
     runs-on: windows-latest
-
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust (stable)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
       - name: Bump version and commit
+        id: bump
         run: |
           $cargo = Get-Content Cargo.toml
           $versionLine = $cargo | Select-String -Pattern '^version = "(.*?)"$'
           $currentVersion = $versionLine.Matches.Groups[1].Value
-          
+
           $parts = $currentVersion.Split('.')
           $parts[2] = [int]$parts[2] + 1
           $newVersion = $parts -join '.'
-          
+
           Write-Host "Bumping version from $currentVersion to $newVersion"
-          
+          "new_version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
           (Get-Content Cargo.toml) -replace "^version = `"$currentVersion`"$", "version = `"$newVersion`"" | Set-Content Cargo.toml
           (Get-Content setup.iss) -replace "^AppVersion=$currentVersion$", "AppVersion=$newVersion" | Set-Content setup.iss
-          
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml setup.iss
@@ -58,6 +56,22 @@ jobs:
             git commit -m "chore: bump version to $newVersion [skip ci]"
             git push
           }
+
+  build-windows:
+    name: Build Windows installer
+    needs: bump-version
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Setup Rust (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
       # build.rs embeds the icon only when assets/logo.ico exists.
       # ImageMagick is pre-installed on windows-latest runners.
@@ -72,20 +86,137 @@ jobs:
       - name: Build Windows installer with Inno Setup
         run: iscc setup.iss
 
-      # Delete the old rolling tag/release so the asset URL stays stable.
-      - name: Publish to windows-nightly release
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: Output/lekhani-latexSetup.exe
+
+  build-macos:
+    name: Build macOS app
+    needs: bump-version
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Setup Rust (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build release binary (Apple Silicon)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Build release binary (Intel)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            target/aarch64-apple-darwin/release/lekhani-latex \
+            target/x86_64-apple-darwin/release/lekhani-latex \
+            -output target/release/lekhani-latex-universal
+
+      - name: Create macOS .app bundle
+        run: |
+          APP_NAME="Lekhani LaTeX"
+          APP_DIR="${APP_NAME}.app"
+          VERSION="${{ needs.bump-version.outputs.new_version }}"
+
+          mkdir -p "${APP_DIR}/Contents/MacOS"
+          mkdir -p "${APP_DIR}/Contents/Resources"
+
+          cp target/release/lekhani-latex-universal "${APP_DIR}/Contents/MacOS/lekhani-latex"
+          chmod +x "${APP_DIR}/Contents/MacOS/lekhani-latex"
+
+          # Convert logo.png to .icns for macOS app icon
+          mkdir -p icon.iconset
+          sips -z 16 16     assets/logo.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32     assets/logo.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     assets/logo.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64     assets/logo.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   assets/logo.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256   assets/logo.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   assets/logo.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512   assets/logo.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   assets/logo.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 assets/logo.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o "${APP_DIR}/Contents/Resources/AppIcon.icns"
+          rm -rf icon.iconset
+
+          # Create Info.plist
+          cat > "${APP_DIR}/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundleDisplayName</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.borneelphukan.lekhani-latex</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleExecutable</key>
+            <string>lekhani-latex</string>
+            <key>CFBundleIconFile</key>
+            <string>AppIcon</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Lekhani LaTeX" \
+            -srcfolder "Lekhani LaTeX.app" \
+            -ov -format UDZO \
+            "Lekhani-LaTeX.dmg"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: Lekhani-LaTeX.dmg
+
+  publish:
+    name: Publish nightly release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Publish to nightly release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-nightly
+          tag_name: nightly
           name: "Nightly Release"
           body: |
             **Nightly build** from the `dev` branch.
 
             > ⚠️ This is a pre-release build and may contain bugs or unfinished features.
-            > For a stable experience use the [Stable Release](https://github.com/borneelphukan/lekhani-latex/releases/tag/windows-stable).
+            > For a stable experience use the [Stable Release](https://github.com/borneelphukan/lekhani-latex/releases/tag/stable).
 
             **Commit:** ${{ github.sha }}
             **Built:** ${{ github.event.head_commit.timestamp }}
           prerelease: true
           make_latest: false
-          files: Output/lekhani-latexSetup.exe
+          files: |
+            windows-installer/lekhani-latexSetup.exe
+            macos-dmg/Lekhani-LaTeX.dmg

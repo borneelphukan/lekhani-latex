@@ -2197,11 +2197,11 @@ impl App {
 
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
-            let url = "https://mirror.ctan.org/systems/windows/protext/protext-3.2-021024.zip";
+            let url = "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-windows.exe";
             #[cfg(target_os = "linux")]
             let url = "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz";
             #[cfg(target_os = "macos")]
-            let url = "https://mirror.ctan.org/systems/mac/mactex/mactex-basic.pkg";
+            let url = "https://mirror.ctan.org/systems/mac/mactex/BasicTeX.pkg";
 
             match ureq::get(url).header("User-Agent", "lekhani-latex").call() {
                 Ok(response) => {
