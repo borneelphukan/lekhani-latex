@@ -1,0 +1,43 @@
+[package]
+name = "lekhani-latex"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+lekhani-core = { path = "../core" }
+lekhani-compiler = { path = "../compiler" }
+egui.workspace = true
+eframe.workspace = true
+regex.workspace = true
+image.workspace = true
+thiserror.workspace = true
+rfd.workspace = true
+ureq.workspace = true
+dirs.workspace = true
+arboard.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+winres.workspace = true
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/lekhani-latex", dest = "/usr/bin/lekhani-latex", mode = "0755" },
+    { source = "../assets/logo.png", dest = "/usr/share/icons/hicolor/256x256/apps/lekhani-latex.png", mode = "0644" },
+    { source = "../assets/lekhani-latex.desktop", dest = "/usr/share/applications/lekhani-latex.desktop", mode = "0644" }
+]
+
+[package.metadata.generate-rpm.requires]
+texlive-pdftex = "*"
+poppler-utils = "*"
+
+[package.metadata.deb]
+maintainer = "Borneel Bikash Phukan"
+assets = [
+    { source = "target/release/lekhani-latex", dest = "usr/bin/lekhani-latex", mode = "755" },
+    { source = "../assets/logo.png", dest = "usr/share/icons/hicolor/256x256/apps/lekhani-latex.png", mode = "644" },
+    { source = "../assets/lekhani-latex.desktop", dest = "usr/share/applications/lekhani-latex.desktop", mode = "644" }
+]
+depends = "$auto, texlive-latex-recommended, poppler-utils"

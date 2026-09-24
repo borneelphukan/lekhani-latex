@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::app::App;
 use crate::app::tab::Tab;
-use crate::buffer::EditorBuffer;
+use lekhani_core::buffer::EditorBuffer;
 fn project_tex_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new("."));
     let file_name = path
@@ -91,15 +91,15 @@ impl App {
                 ui.set_min_width(220.0);
                 
                 ui.menu_button("Theme", |ui| {
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::System, "System").clicked() {
+                    if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::System, "System").clicked() {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::Light, "Light").clicked() {
+                    if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::Light, "Light").clicked() {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }
-                    if ui.radio_value(&mut self.theme, crate::types::Theme::Dark, "Dark").clicked() {
+                    if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::Dark, "Dark").clicked() {
                         crate::app::App::save_theme(self.theme);
                         ui.close();
                     }

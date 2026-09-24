@@ -1,0 +1,10 @@
+[package]
+name = "lekhani-core"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+egui.workspace = true
+regex.workspace = true

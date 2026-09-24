@@ -1926,6 +1926,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
+name = "lekhani-compiler"
+version = "0.1.0"
+dependencies = [
+ "lekhani-core",
+]
+
+[[package]]
+name = "lekhani-core"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "regex",
+]
+
+[[package]]
 name = "lekhani-latex"
 version = "0.1.0"
 dependencies = [
@@ -1934,6 +1949,8 @@ dependencies = [
  "eframe",
  "egui",
  "image",
+ "lekhani-compiler",
+ "lekhani-core",
  "regex",
  "rfd",
  "serde_json",

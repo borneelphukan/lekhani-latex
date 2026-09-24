@@ -10,7 +10,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-use crate::types::CompilerConfig;
+use lekhani_core::types::CompilerConfig;
 use super::parser::{extract_errors, extract_warnings, read_log_fatal};
 
 #[derive(Debug, Clone)]

@@ -1,12 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app;
-mod buffer;
-mod compiler;
-mod completions;
-mod lexer;
 mod preview;
-mod types;
 mod components;
 
 fn load_icon() -> Option<egui::IconData> {
