@@ -12,11 +12,7 @@ pub fn extract_warnings(stderr: &str, stdout: &str, log_path: &Path) -> Vec<Stri
     let combined = format!("{}\n{}", stderr, stdout);
     let mut warnings: Vec<String> = combined
         .lines()
-        .filter(|l| {
-            l.contains("Warning:")
-                || l.contains("Overfull")
-                || l.contains("Underfull")
-        })
+        .filter(|l| l.contains("Warning:") || l.contains("Overfull") || l.contains("Underfull"))
         .map(|l| l.trim().to_string())
         .collect();
 

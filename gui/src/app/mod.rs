@@ -1,14 +1,13 @@
-pub mod tab;
-pub mod layout;
 mod editor;
+pub mod layout;
+pub mod tab;
 
 use std::path::PathBuf;
 use std::time::Instant;
 
-
 use egui::{CentralPanel, Color32, Panel};
-use std::sync::OnceLock;
 use regex::Regex;
+use std::sync::OnceLock;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -53,8 +52,15 @@ enum UpdateMessage {
 
 #[derive(Clone, Debug)]
 pub enum LlmAction {
-    Correction { text: String, line: Option<usize>, explanation: Option<String> },
-    InstallPackage { package: String, explanation: Option<String> },
+    Correction {
+        text: String,
+        line: Option<usize>,
+        explanation: Option<String>,
+    },
+    InstallPackage {
+        package: String,
+        explanation: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -167,7 +173,8 @@ impl App {
             output_panel_tab: OutputPanelTab::Compiler,
         };
 
-        let (key, tab_index, configured, model, custom_model, endpoint_url) = Self::load_initial_llm_settings();
+        let (key, tab_index, configured, model, custom_model, endpoint_url) =
+            Self::load_initial_llm_settings();
         app.llm_api_key = key;
         app.llm_settings_tab_index = tab_index;
         app.llm_configured = configured;
@@ -208,7 +215,7 @@ impl App {
                         } else {
                             None
                         };
-                        
+
                         if current != last_theme {
                             last_theme = current;
                             if let Some(t) = current {
@@ -268,7 +275,10 @@ impl App {
                             if let Some(parent) = path.parent() {
                                 let _ = std::fs::create_dir_all(parent);
                             }
-                            let _ = std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap_or_default());
+                            let _ = std::fs::write(
+                                &path,
+                                serde_json::to_string_pretty(&config).unwrap_or_default(),
+                            );
                             let _ = std::fs::remove_file(old_path);
                         }
                     }
@@ -283,24 +293,64 @@ impl App {
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            let _ = std::fs::write(path, serde_json::to_string_pretty(config).unwrap_or_default());
+            let _ = std::fs::write(
+                path,
+                serde_json::to_string_pretty(config).unwrap_or_default(),
+            );
         }
     }
 
     fn load_llm_settings() -> (Option<String>, usize, bool, String, String, String) {
         let config = Self::read_app_config();
-        let key = config.get("llm_api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let key = if let Some(k) = key { if !k.is_empty() { Some(k) } else { None } } else { None };
-        let tab_index = config.get("llm_settings_tab_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-        let configured = config.get("llm_configured").and_then(|v| v.as_bool()).unwrap_or(false);
-        let model = config.get("llm_model").and_then(|v| v.as_str()).unwrap_or("llama-3.2-3b").to_string();
-        let custom_model = config.get("llm_custom_model").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let endpoint_url = config.get("llm_endpoint_url").and_then(|v| v.as_str()).unwrap_or("http://localhost:1234/v1").to_string();
-        (key, tab_index, configured, model, custom_model, endpoint_url)
+        let key = config
+            .get("llm_api_key")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let key = if let Some(k) = key {
+            if !k.is_empty() {
+                Some(k)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let tab_index = config
+            .get("llm_settings_tab_index")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let configured = config
+            .get("llm_configured")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let model = config
+            .get("llm_model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("llama-3.2-3b")
+            .to_string();
+        let custom_model = config
+            .get("llm_custom_model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let endpoint_url = config
+            .get("llm_endpoint_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("http://localhost:1234/v1")
+            .to_string();
+        (
+            key,
+            tab_index,
+            configured,
+            model,
+            custom_model,
+            endpoint_url,
+        )
     }
 
     fn load_initial_llm_settings() -> (String, usize, bool, String, String, String) {
-        let (key, tab_index, configured, model, custom_model, endpoint_url) = Self::load_llm_settings();
+        let (key, tab_index, configured, model, custom_model, endpoint_url) =
+            Self::load_llm_settings();
         if let Some(k) = key {
             return (k, tab_index, true, model, custom_model, endpoint_url);
         }
@@ -309,7 +359,14 @@ impl App {
                 return (k, tab_index, true, model, custom_model, endpoint_url);
             }
         }
-        (String::new(), tab_index, configured, model, custom_model, endpoint_url)
+        (
+            String::new(),
+            tab_index,
+            configured,
+            model,
+            custom_model,
+            endpoint_url,
+        )
     }
 
     fn save_llm_settings(&self) {
@@ -400,7 +457,8 @@ impl App {
                     }
                     CompileEvent::Warnings(warnings) => {
                         for w in &warnings {
-                            tab.output_log.push((w.clone(), Color32::from_rgb(200, 180, 40)));
+                            tab.output_log
+                                .push((w.clone(), Color32::from_rgb(200, 180, 40)));
                         }
                     }
                     CompileEvent::Success(pdf_path) => {
@@ -414,7 +472,11 @@ impl App {
                         tab.error_lines.clear();
                         tab.error_message = None;
                         let dur_str = if duration.as_secs() > 0 {
-                            format!("{}.{:02}s", duration.as_secs(), duration.subsec_millis() / 10)
+                            format!(
+                                "{}.{:02}s",
+                                duration.as_secs(),
+                                duration.subsec_millis() / 10
+                            )
                         } else {
                             format!("{}ms", duration.subsec_millis())
                         };
@@ -438,7 +500,9 @@ impl App {
                         tab.error_message = Some(error_text.clone());
                         tab.output_log.clear();
 
-                        if error_text.contains("was not found. Is a LaTeX distribution (MiKTeX/TeX Live) installed?") {
+                        if error_text.contains(
+                            "was not found. Is a LaTeX distribution (MiKTeX/TeX Live) installed?",
+                        ) {
                             self.show_compiler_dialog = true;
                         }
                         let re_line = error_line_regex();
@@ -458,15 +522,20 @@ impl App {
                                             all_error_lines.push(n);
                                         }
                                     }
-                                    context = line_ref.find(' ')
+                                    context = line_ref
+                                        .find(' ')
                                         .map(|p| line_ref[p..].trim())
                                         .unwrap_or("")
                                         .to_string();
                                     j += 1;
                                 }
-                                let source_line = tab.buffer.text.lines().nth(
-                                    line_num.checked_sub(1).unwrap_or(0),
-                                ).unwrap_or("").to_string();
+                                let source_line = tab
+                                    .buffer
+                                    .text
+                                    .lines()
+                                    .nth(line_num.checked_sub(1).unwrap_or(0))
+                                    .unwrap_or("")
+                                    .to_string();
                                 let error_syntax = if !source_line.is_empty() {
                                     source_line
                                 } else if !context.is_empty() {
@@ -475,11 +544,15 @@ impl App {
                                     String::new()
                                 };
                                 let display = if !error_syntax.is_empty() {
-                                    format!("\u{00D7} Error[line {}]: {} {}", line_num, error_syntax, err_code)
+                                    format!(
+                                        "\u{00D7} Error[line {}]: {} {}",
+                                        line_num, error_syntax, err_code
+                                    )
                                 } else {
                                     format!("\u{00D7} Error: {}", err_code)
                                 };
-                                tab.output_log.push((display, Color32::from_rgb(220, 60, 60)));
+                                tab.output_log
+                                    .push((display, Color32::from_rgb(220, 60, 60)));
                             }
                             j += 1;
                         }
@@ -519,11 +592,19 @@ impl App {
                 let tab = self.active_tab_mut();
                 match result {
                     Ok(action) => match action {
-                        LlmAction::Correction { text, line, explanation } => {
+                        LlmAction::Correction {
+                            text,
+                            line,
+                            explanation,
+                        } => {
                             if let Some(expl) = explanation {
-                                tab.ai_output_log.push((expl, egui::Color32::from_rgb(100, 200, 100)));
+                                tab.ai_output_log
+                                    .push((expl, egui::Color32::from_rgb(100, 200, 100)));
                             } else {
-                                tab.ai_output_log.push(("Correction applied successfully.".to_string(), egui::Color32::from_rgb(100, 200, 100)));
+                                tab.ai_output_log.push((
+                                    "Correction applied successfully.".to_string(),
+                                    egui::Color32::from_rgb(100, 200, 100),
+                                ));
                             }
                             if let Some(l) = line {
                                 let lines: Vec<&str> = tab.buffer.text.lines().collect();
@@ -537,7 +618,8 @@ impl App {
                                         }
                                         new_text.push('\n');
                                     }
-                                    if new_text.ends_with('\n') && !tab.buffer.text.ends_with('\n') {
+                                    if new_text.ends_with('\n') && !tab.buffer.text.ends_with('\n')
+                                    {
                                         new_text.pop();
                                     }
                                     tab.buffer.replace_all(&new_text);
@@ -548,12 +630,19 @@ impl App {
                             tab.status_message = "Syntax corrected via LLM".into();
                             set_ai_tab = true;
                         }
-                        LlmAction::InstallPackage { package, explanation } => {
+                        LlmAction::InstallPackage {
+                            package,
+                            explanation,
+                        } => {
                             let pkg = package;
                             if let Some(expl) = explanation {
-                                tab.ai_output_log.push((expl, egui::Color32::from_rgb(100, 200, 100)));
+                                tab.ai_output_log
+                                    .push((expl, egui::Color32::from_rgb(100, 200, 100)));
                             }
-                            tab.ai_output_log.push((format!("Attempting to install package {}...", pkg), egui::Color32::from_rgb(200, 200, 100)));
+                            tab.ai_output_log.push((
+                                format!("Attempting to install package {}...", pkg),
+                                egui::Color32::from_rgb(200, 200, 100),
+                            ));
                             tab.status_message = format!("Installing package {}...", pkg).into();
                             let tx = self.update_tx.clone();
                             std::thread::spawn(move || {
@@ -599,11 +688,14 @@ impl App {
         for tab in &mut self.tabs {
             for (page, img) in &tab.preview.rendered_pages {
                 if !tab.preview_textures.contains_key(page) {
-                    tab.preview_textures.insert(*page, ctx.load_texture(
-                        &format!("preview_{}_{}", tab.title, page),
-                        img.clone(),
-                        egui::TextureOptions::LINEAR,
-                    ));
+                    tab.preview_textures.insert(
+                        *page,
+                        ctx.load_texture(
+                            &format!("preview_{}_{}", tab.title, page),
+                            img.clone(),
+                            egui::TextureOptions::LINEAR,
+                        ),
+                    );
                 }
             }
         }
@@ -618,12 +710,12 @@ impl eframe::App for App {
             cmd.arg("--version");
             #[cfg(windows)]
             cmd.creation_flags(0x08000000);
-            
+
             let is_missing = match cmd.output() {
                 Ok(output) => !output.status.success(),
                 Err(e) => e.kind() == std::io::ErrorKind::NotFound,
             };
-            
+
             if is_missing {
                 self.show_compiler_dialog = true;
             }
@@ -635,10 +727,12 @@ impl eframe::App for App {
 
         let is_fullscreen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
         if is_fullscreen && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
         if ui.ctx().input(|i| i.key_pressed(egui::Key::F12)) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
         }
 
         if ui.ctx().input(|i| i.viewport().close_requested()) {
@@ -646,27 +740,42 @@ impl eframe::App for App {
             if has_unsaved {
                 let res = rfd::MessageDialog::new()
                     .set_title("Unsaved Changes")
-                    .set_description("You have unsaved documents. Are you sure you want to quit without saving?")
+                    .set_description(
+                        "You have unsaved documents. Are you sure you want to quit without saving?",
+                    )
                     .set_buttons(rfd::MessageButtons::YesNo)
                     .show();
                 if res != rfd::MessageDialogResult::Yes {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 }
             }
         }
 
-        if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+        if ui
+            .ctx()
+            .input(|i| i.modifiers.command && i.key_pressed(egui::Key::O))
+        {
             self.file_dialog_action = Some(FileDialogAction::Open);
         }
 
         if !self.tabs.is_empty() {
-            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+            if ui
+                .ctx()
+                .input(|i| i.modifiers.command && i.key_pressed(egui::Key::S))
+            {
                 self.file_dialog_action = Some(FileDialogAction::Save);
             }
-            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z)) {
+            if ui
+                .ctx()
+                .input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z))
+            {
                 self.active_tab_mut().buffer.undo();
             }
-            if ui.ctx().input(|i| i.modifiers.command && i.key_pressed(egui::Key::Y)) {
+            if ui
+                .ctx()
+                .input(|i| i.modifiers.command && i.key_pressed(egui::Key::Y))
+            {
                 self.active_tab_mut().buffer.redo();
             }
         }
@@ -689,10 +798,12 @@ impl eframe::App for App {
 
         let now = Instant::now();
         if self.auto_compile && !self.tabs.is_empty() {
-            let idle_time = self.last_content_change
+            let idle_time = self
+                .last_content_change
                 .map(|t| now.duration_since(t).as_secs_f32())
                 .unwrap_or(f32::MAX);
-            let compile_interval = self.last_auto_compile
+            let compile_interval = self
+                .last_auto_compile
                 .map(|t| now.duration_since(t).as_secs_f32())
                 .unwrap_or(f32::MAX);
             if idle_time >= 0.8 && compile_interval >= 1.2 {
@@ -715,18 +826,14 @@ impl eframe::App for App {
             });
 
             if !self.tabs.is_empty() {
-                Panel::top("tab_bar")
-                    .min_size(26.0)
-                    .show_inside(ui, |ui| {
-                        self.tab_bar(ui);
-                    });
+                Panel::top("tab_bar").min_size(26.0).show_inside(ui, |ui| {
+                    self.tab_bar(ui);
+                });
             }
 
-            Panel::top("toolbar")
-                .min_size(32.0)
-                .show_inside(ui, |ui| {
-                    self.toolbar(ui);
-                });
+            Panel::top("toolbar").min_size(32.0).show_inside(ui, |ui| {
+                self.toolbar(ui);
+            });
         }
 
         if show_panels {
@@ -770,13 +877,21 @@ impl eframe::App for App {
                     );
                     ui.add_space(12.0);
                     ui.scope(|ui| {
-                        ui.style_mut().text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
+                        ui.style_mut()
+                            .text_styles
+                            .insert(egui::TextStyle::Button, egui::FontId::proportional(16.0));
                         ui.spacing_mut().button_padding = egui::vec2(16.0, 8.0);
-                        if ui.add(crate::components::button::standard("New Document")).clicked() {
+                        if ui
+                            .add(crate::components::button::standard("New Document"))
+                            .clicked()
+                        {
                             self.new_document();
                         }
                         ui.add_space(4.0);
-                        if ui.add(crate::components::button::standard("Open File")).clicked() {
+                        if ui
+                            .add(crate::components::button::standard("Open File"))
+                            .clicked()
+                        {
                             self.open_file();
                         }
                     });
@@ -937,9 +1052,7 @@ impl App {
             let url = "https://api.github.com/repos/example/lekhani-latex/releases/latest";
             let mut is_available = false;
             let mut version = None;
-            if let Ok(response) =
-                ureq::get(url).header("User-Agent", "lekhani-latex").call()
-            {
+            if let Ok(response) = ureq::get(url).header("User-Agent", "lekhani-latex").call() {
                 use std::io::Read;
                 let mut json = String::new();
                 if response
@@ -998,34 +1111,33 @@ impl App {
                                     let _ = file.write_all(&buf[..n]);
                                     downloaded += n as u64;
                                     if let Some(total) = len {
-                                        let progress =
-                                            (downloaded as f32) / (total as f32);
+                                        let progress = (downloaded as f32) / (total as f32);
                                         let _ = tx.send(UpdateMessage::DownloadProgress(progress));
                                         ctx.request_repaint();
                                     }
                                 }
                                 Err(_) => {
-                                    let _ = tx.send(UpdateMessage::DownloadComplete(
-                                        Err("Download failed".into()),
-                                    ));
+                                    let _ = tx.send(UpdateMessage::DownloadComplete(Err(
+                                        "Download failed".into(),
+                                    )));
                                     ctx.request_repaint();
                                     return;
                                 }
                             }
                         }
-                        let _ = tx.send(UpdateMessage::DownloadComplete(
-                            Ok(out_path.to_string_lossy().into()),
-                        ));
+                        let _ = tx.send(UpdateMessage::DownloadComplete(Ok(out_path
+                            .to_string_lossy()
+                            .into())));
                     } else {
-                        let _ = tx.send(UpdateMessage::DownloadComplete(
-                            Err("Failed to create file".into()),
-                        ));
+                        let _ = tx.send(UpdateMessage::DownloadComplete(Err(
+                            "Failed to create file".into(),
+                        )));
                     }
                     ctx.request_repaint();
                 }
                 Err(_) => {
                     let _ = tx.send(UpdateMessage::DownloadComplete(Err(
-                        "Download failed".into(),
+                        "Download failed".into()
                     )));
                     ctx.request_repaint();
                 }
@@ -1080,7 +1192,8 @@ impl App {
                         let tab = self.active_tab_mut();
                         match result {
                             Ok(_) => {
-                                tab.status_message = format!("Package {} installed successfully", pkg).into();
+                                tab.status_message =
+                                    format!("Package {} installed successfully", pkg).into();
                                 tab.ai_output_log.push((
                                     format!("Package {} installed successfully", pkg),
                                     egui::Color32::from_rgb(60, 180, 75),
@@ -1105,7 +1218,7 @@ impl App {
                     match result {
                         Ok(path) => {
                             self.compiler_download_state = CompilerDownloadState::Complete;
-                            
+
                             // Launch the installer
                             #[cfg(target_os = "windows")]
                             {
@@ -1115,22 +1228,45 @@ impl App {
                             {
                                 // Provide a command to run or run it in terminal
                                 // For tar.gz, we just show a message, or try to run it via terminal
-                                let extract_dir = path.parent().unwrap_or(std::path::Path::new("/tmp"));
+                                let extract_dir =
+                                    path.parent().unwrap_or(std::path::Path::new("/tmp"));
                                 let cmd = format!(
                                     "cd {} && tar xzf {} && cd install-tl-* && sudo ./install-tl",
                                     extract_dir.display(),
                                     path.display()
                                 );
-                                
-                                let terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "xterm"];
+
+                                let terminals = [
+                                    "gnome-terminal",
+                                    "konsole",
+                                    "xfce4-terminal",
+                                    "alacritty",
+                                    "xterm",
+                                ];
                                 for term in terminals {
                                     let mut spawn_cmd = std::process::Command::new(term);
                                     if term == "gnome-terminal" {
-                                        spawn_cmd.args(&["--", "bash", "-c", &format!("{}; read -p '\nPress enter to close...'", cmd)]);
+                                        spawn_cmd.args(&[
+                                            "--",
+                                            "bash",
+                                            "-c",
+                                            &format!(
+                                                "{}; read -p '\nPress enter to close...'",
+                                                cmd
+                                            ),
+                                        ]);
                                     } else {
-                                        spawn_cmd.args(&["-e", "bash", "-c", &format!("{}; read -p '\nPress enter to close...'", cmd)]);
+                                        spawn_cmd.args(&[
+                                            "-e",
+                                            "bash",
+                                            "-c",
+                                            &format!(
+                                                "{}; read -p '\nPress enter to close...'",
+                                                cmd
+                                            ),
+                                        ]);
                                     }
-                                    
+
                                     if spawn_cmd.spawn().is_ok() {
                                         break;
                                     }
@@ -1588,8 +1724,12 @@ impl App {
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
         let mut remove_tab = None;
         let tab_count = self.tabs.len();
-        let pointer_down = ui.ctx().input(|i| i.pointer.button_down(egui::PointerButton::Primary));
-        let pointer_up = ui.ctx().input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+        let pointer_down = ui
+            .ctx()
+            .input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+        let pointer_up = ui
+            .ctx()
+            .input(|i| i.pointer.button_released(egui::PointerButton::Primary));
         let pointer_pos = ui.ctx().input(|i| i.pointer.interact_pos());
         let press_origin = ui.ctx().input(|i| i.pointer.press_origin());
 
@@ -1602,7 +1742,10 @@ impl App {
                         for j in 0..tab_count {
                             let w = tab_width_for(&self.tabs, j, j == self.active_tab);
                             let center = cx + w / 2.0;
-                            if pos.x < center { to = j; break; }
+                            if pos.x < center {
+                                to = j;
+                                break;
+                            }
                             cx += w;
                         }
                     }
@@ -1666,10 +1809,8 @@ impl App {
 
                         if is_dragging {
                             let tw = tab_width_for(&self.tabs, i, is_active);
-                            let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(tw, 28.0),
-                                egui::Sense::hover(),
-                            );
+                            let (rect, _) =
+                                ui.allocate_exact_size(egui::vec2(tw, 28.0), egui::Sense::hover());
                             drag_rects.push(rect);
                             continue;
                         }
@@ -1706,8 +1847,10 @@ impl App {
                             if ui
                                 .put(
                                     close_rect,
-                                    crate::components::button::standard(egui::RichText::new("×").size(13.0))
-                                        .frame(false),
+                                    crate::components::button::standard(
+                                        egui::RichText::new("×").size(13.0),
+                                    )
+                                    .frame(false),
                                 )
                                 .clicked()
                             {
@@ -1746,7 +1889,11 @@ impl App {
         if let Some((drag_idx, _)) = self.tab_drag {
             if let Some(pos) = pointer_pos {
                 let is_dark = ui.visuals().dark_mode;
-                let active_fill = if is_dark { Color32::from_rgb(38, 38, 38) } else { Color32::from_rgb(225, 226, 232) };
+                let active_fill = if is_dark {
+                    Color32::from_rgb(38, 38, 38)
+                } else {
+                    Color32::from_rgb(225, 226, 232)
+                };
                 let w = tab_width_for(&self.tabs, drag_idx, drag_idx == self.active_tab);
                 let overlay_y = drag_rects.first().map_or(0.0, |r| r.top());
 
@@ -1787,7 +1934,11 @@ impl App {
     fn output_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let is_open = self.show_outputs;
-            let label = if is_open { "▼ Outputs" } else { "▶ Outputs" };
+            let label = if is_open {
+                "▼ Outputs"
+            } else {
+                "▶ Outputs"
+            };
             if ui.button(label).clicked() {
                 self.show_outputs = !self.show_outputs;
             }
@@ -1813,35 +1964,57 @@ impl App {
                     ui.scope(|ui| {
                         let is_dark = ui.visuals().dark_mode;
                         ui.style_mut().spacing.button_padding = egui::vec2(16.0, 8.0); // Bigger tabs
-                        ui.style_mut().visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
-                        ui.style_mut().visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
-                        ui.style_mut().visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.widgets.active.corner_radius =
+                            egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.widgets.inactive.corner_radius =
+                            egui::CornerRadius::same(6);
+                        ui.style_mut().visuals.widgets.hovered.corner_radius =
+                            egui::CornerRadius::same(6);
                         ui.style_mut().visuals.selection.bg_fill = if is_dark {
                             egui::Color32::from_rgb(65, 65, 75) // Darker background
                         } else {
                             egui::Color32::from_rgb(215, 215, 225)
                         };
-                        
-                        let compiler_text = egui::RichText::new("Compiler Output").size(14.0).strong();
-                        ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::Compiler, compiler_text);
-                        
+
+                        let compiler_text =
+                            egui::RichText::new("Compiler Output").size(14.0).strong();
+                        ui.selectable_value(
+                            &mut self.output_panel_tab,
+                            OutputPanelTab::Compiler,
+                            compiler_text,
+                        );
+
                         if self.llm_configured {
                             let ai_text = egui::RichText::new("AI Output").size(14.0).strong();
-                            ui.selectable_value(&mut self.output_panel_tab, OutputPanelTab::AI, ai_text);
+                            ui.selectable_value(
+                                &mut self.output_panel_tab,
+                                OutputPanelTab::AI,
+                                ai_text,
+                            );
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.scope(|ui| {
                             ui.style_mut().spacing.button_padding = egui::vec2(16.0, 8.0);
-                            ui.style_mut().visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
-                            ui.style_mut().visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
-                            ui.style_mut().visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
-                            
-                            if ui.button(egui::RichText::new("Clear").size(14.0).strong()).clicked() {
+                            ui.style_mut().visuals.widgets.active.corner_radius =
+                                egui::CornerRadius::same(6);
+                            ui.style_mut().visuals.widgets.inactive.corner_radius =
+                                egui::CornerRadius::same(6);
+                            ui.style_mut().visuals.widgets.hovered.corner_radius =
+                                egui::CornerRadius::same(6);
+
+                            if ui
+                                .button(egui::RichText::new("Clear").size(14.0).strong())
+                                .clicked()
+                            {
                                 if !self.tabs.is_empty() {
                                     match self.output_panel_tab {
-                                        OutputPanelTab::Compiler => self.active_tab_mut().output_log.clear(),
-                                        OutputPanelTab::AI => self.active_tab_mut().ai_output_log.clear(),
+                                        OutputPanelTab::Compiler => {
+                                            self.active_tab_mut().output_log.clear()
+                                        }
+                                        OutputPanelTab::AI => {
+                                            self.active_tab_mut().ai_output_log.clear()
+                                        }
                                     }
                                 }
                             }
@@ -1866,7 +2039,12 @@ impl App {
                                 } else {
                                     *color
                                 };
-                                ui.label(egui::RichText::new(text).color(c).family(egui::FontFamily::Monospace).size(13.0));
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .color(c)
+                                        .family(egui::FontFamily::Monospace)
+                                        .size(13.0),
+                                );
                             }
                         }
                     });
@@ -1876,7 +2054,7 @@ impl App {
     fn compiler_dialog_ui(&mut self, ctx: &egui::Context) {
         let mut open = self.show_compiler_dialog;
         let mut close_requested = false;
-        
+
         egui::Window::new("compiler_dialog_ui")
             .title_bar(false)
             .open(&mut open)
@@ -1911,13 +2089,13 @@ impl App {
                     ui.add_space(8.0);
                     ui.label("Would you like to download and install the recommended TeX Live package (medium scheme)?");
                     ui.add_space(24.0);
-                    
+
                     match &self.compiler_download_state {
                         CompilerDownloadState::None => {}
                         CompilerDownloadState::Downloading(progress) => {
                             ui.label("Downloading installer...");
                             ui.add_space(16.0);
-                            
+
                             let rect = ui.available_rect_before_wrap();
                             let size = egui::vec2(rect.width(), 20.0);
                             let (_rect, _response) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -2004,7 +2182,7 @@ impl App {
                     }
                 }
             });
-            
+
         if close_requested || !open {
             self.show_compiler_dialog = false;
             if close_requested {
@@ -2012,11 +2190,11 @@ impl App {
             }
         }
     }
-    
+
     fn start_compiler_download(&mut self) {
         self.compiler_download_state = CompilerDownloadState::Downloading(0.0);
         let tx = self.update_tx.clone();
-        
+
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
             let url = "https://mirror.ctan.org/systems/windows/protext/protext-3.2-021024.zip";
@@ -2024,7 +2202,7 @@ impl App {
             let url = "https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz";
             #[cfg(target_os = "macos")]
             let url = "https://mirror.ctan.org/systems/mac/mactex/mactex-basic.pkg";
-            
+
             match ureq::get(url).header("User-Agent", "lekhani-latex").call() {
                 Ok(response) => {
                     let len: Option<u64> = response
@@ -2032,19 +2210,20 @@ impl App {
                         .get("Content-Length")
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse().ok());
-                        
+
                     let mut reader = response.into_body().into_reader();
-                    let download_dir = dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
-                    
+                    let download_dir =
+                        dirs::download_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+
                     #[cfg(target_os = "windows")]
                     let file_name = "protext.zip";
                     #[cfg(target_os = "linux")]
                     let file_name = "install-tl-unx.tar.gz";
                     #[cfg(target_os = "macos")]
                     let file_name = "mactex-basic.pkg";
-                    
+
                     let out_path = download_dir.join(file_name);
-                    
+
                     if let Ok(mut file) = std::fs::File::create(&out_path) {
                         use std::io::Read;
                         let mut buf = [0; 8192];
@@ -2058,22 +2237,31 @@ impl App {
                                     downloaded += n as u64;
                                     if let Some(total) = len {
                                         let progress = (downloaded as f32) / (total as f32);
-                                        let _ = tx.send(UpdateMessage::CompilerDownloadProgress(progress));
+                                        let _ = tx.send(UpdateMessage::CompilerDownloadProgress(
+                                            progress,
+                                        ));
                                     }
                                 }
                                 Err(e) => {
-                                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(format!("Network error: {}", e))));
+                                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(
+                                        format!("Network error: {}", e),
+                                    )));
                                     return;
                                 }
                             }
                         }
                         let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Ok(out_path)));
                     } else {
-                        let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err("Failed to save file. Check disk permissions.".into())));
+                        let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(
+                            "Failed to save file. Check disk permissions.".into(),
+                        )));
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(format!("Connection failed: {}", e))));
+                    let _ = tx.send(UpdateMessage::CompilerDownloadComplete(Err(format!(
+                        "Connection failed: {}",
+                        e
+                    ))));
                 }
             }
         });

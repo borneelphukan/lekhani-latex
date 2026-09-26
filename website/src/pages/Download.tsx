@@ -30,7 +30,7 @@ export default function Download() {
           
           <div className="flex flex-col sm:flex-row gap-3 w-full">
             <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latex.exe"
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latexSetup.exe"
               className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
               target="_blank"
               rel="noopener noreferrer"
@@ -69,7 +69,7 @@ export default function Download() {
           
           <div className="flex flex-col sm:flex-row gap-3 w-full">
             <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latex.exe"
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latexSetup.exe"
               className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
               target="_blank"
               rel="noopener noreferrer"

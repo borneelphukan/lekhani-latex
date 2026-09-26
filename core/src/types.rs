@@ -77,8 +77,6 @@ impl Theme {
         }
     }
 
-
-
     pub fn syntax_colors(self, ctx: &egui::Context) -> SyntaxColors {
         match self.resolve(ctx) {
             Theme::Dark => SyntaxColors {
@@ -110,10 +108,7 @@ impl Default for CompilerConfig {
     fn default() -> Self {
         Self {
             command: "latexmk".into(),
-            args: vec![
-                "-pdf".into(),
-                "-interaction=nonstopmode".into(),
-            ],
+            args: vec!["-pdf".into(), "-interaction=nonstopmode".into()],
         }
     }
 }
