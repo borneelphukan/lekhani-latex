@@ -28,15 +28,26 @@ export default function Download() {
             The recommended choice for most users. Stable releases are thoroughly tested and provide the most reliable experience for your daily writing.
           </p>
           
-          <a 
-            href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latexSetup.exe"
-            className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <DownloadIcon size={18} />
-            Download Stable
-          </a>
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <a 
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latexSetup.exe"
+              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadIcon size={18} />
+              Windows (.exe)
+            </a>
+            <a 
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-stable/lekhani-latex_0.1.0_amd64.deb"
+              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadIcon size={18} />
+              Ubuntu (.deb)
+            </a>
+          </div>
         </div>
 
         {/* Nightly Release */}
@@ -56,15 +67,26 @@ export default function Download() {
             For those who want to test the latest features and improvements. Updated regularly with the newest code from our development branch.
           </p>
           
-          <a 
-            href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latexSetup.exe"
-            className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <DownloadIcon size={18} />
-            Download Nightly
-          </a>
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <a 
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latexSetup.exe"
+              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadIcon size={18} />
+              Windows (.exe)
+            </a>
+            <a 
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-nightly/lekhani-latex_0.1.0_amd64.deb"
+              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <DownloadIcon size={18} />
+              Ubuntu (.deb)
+            </a>
+          </div>
         </div>
       </div>
     </div>

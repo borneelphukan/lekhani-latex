@@ -19,9 +19,9 @@ fn error_line_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"l\.(\d+)").unwrap())
 }
 
-use crate::compiler::CompileEvent;
+use lekhani_compiler::compiler::CompileEvent;
 use crate::preview::PreviewEvent;
-use crate::types::*;
+use lekhani_core::types::*;
 
 #[derive(Clone)]
 enum UpdateState {
@@ -415,9 +415,9 @@ impl App {
 
     fn apply_theme(&self, ctx: egui::Context) {
         let is_dark = match self.theme {
-            crate::types::Theme::Dark => true,
-            crate::types::Theme::Light => false,
-            crate::types::Theme::System => {
+            lekhani_core::types::Theme::Dark => true,
+            lekhani_core::types::Theme::Light => false,
+            lekhani_core::types::Theme::System => {
                 let sys = self.os_theme.or_else(|| ctx.system_theme());
                 sys == Some(egui::Theme::Dark) || sys.is_none()
             }

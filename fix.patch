@@ -1,0 +1,39 @@
+--- gui/src/app/layout/menubar.rs
++++ gui/src/app/layout/menubar.rs
+@@ -111,28 +111,10 @@
+                 ui.set_min_width(220.0);
+ 
+                 ui.menu_button("Theme", |ui| {
+-<<<<<<< HEAD:gui/src/app/layout/menubar.rs
+                     if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::System, "System").clicked() {
+                         crate::app::App::save_theme(self.theme);
+                         ui.close();
+                     }
+                     if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::Light, "Light").clicked() {
+                         crate::app::App::save_theme(self.theme);
+                         ui.close();
+                     }
+                     if ui.radio_value(&mut self.theme, lekhani_core::types::Theme::Dark, "Dark").clicked() {
+-=======
+-                    if ui
+-                        .radio_value(&mut self.theme, crate::types::Theme::System, "System")
+-                        .clicked()
+-                    {
+-                        crate::app::App::save_theme(self.theme);
+-                        ui.close();
+-                    }
+-                    if ui
+-                        .radio_value(&mut self.theme, crate::types::Theme::Light, "Light")
+-                        .clicked()
+-                    {
+-                        crate::app::App::save_theme(self.theme);
+-                        ui.close();
+-                    }
+-                    if ui
+-                        .radio_value(&mut self.theme, crate::types::Theme::Dark, "Dark")
+-                        .clicked()
+-                    {
+->>>>>>> main:src/app/layout/menubar.rs
+                         crate::app::App::save_theme(self.theme);
+                         ui.close();
+                     }

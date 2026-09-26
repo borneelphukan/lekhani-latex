@@ -1,16 +1,11 @@
 #![windows_subsystem = "windows"]
 
 mod app;
-mod buffer;
-mod compiler;
-mod completions;
-mod components;
-mod lexer;
 mod preview;
-mod types;
+mod components;
 
 fn load_icon() -> Option<egui::IconData> {
-    let icon_bytes = include_bytes!("../assets/logo.png");
+    let icon_bytes = include_bytes!("../../assets/logo.png");
     let img = image::load_from_memory(icon_bytes).ok()?.into_rgba8();
     let (width, height) = img.dimensions();
     Some(egui::IconData {

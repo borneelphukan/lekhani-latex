@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::Theme;
+use lekhani_core::types::Theme;
 use egui::Color32;
 
 impl App {
@@ -11,9 +11,8 @@ impl App {
             let is_compiling = compile_enabled
                 && matches!(
                     self.active_tab().compiler.status(),
-                    crate::compiler::CompileStatus::Running
+                    lekhani_compiler::compiler::CompileStatus::Running
                 );
-
             let button_text = if is_compiling {
                 "  \u{23F3}  Compiling…  "
             } else {

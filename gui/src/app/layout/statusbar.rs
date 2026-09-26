@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::compiler::CompileStatus;
+use lekhani_compiler::compiler::CompileStatus;
 use egui::Color32;
 
 impl App {

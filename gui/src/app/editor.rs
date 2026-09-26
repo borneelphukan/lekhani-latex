@@ -1,7 +1,7 @@
 use crate::app::App;
-use crate::completions;
-use crate::lexer;
-use crate::types::Theme;
+use lekhani_core::completions;
+use lekhani_core::lexer;
+use lekhani_core::types::Theme;
 use egui::{Color32, ScrollArea, TextEdit};
 use std::time::Instant;
 

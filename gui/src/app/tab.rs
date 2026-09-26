@@ -3,10 +3,10 @@ use std::time::Instant;
 
 use egui::Color32;
 
-use crate::buffer::EditorBuffer;
-use crate::compiler::CompilerBridge;
+use lekhani_core::buffer::EditorBuffer;
+use lekhani_compiler::compiler::CompilerBridge;
 use crate::preview::PreviewViewer;
-use crate::types::CompilerConfig;
+use lekhani_core::types::CompilerConfig;
 
 pub struct Tab {
     pub title: String,
