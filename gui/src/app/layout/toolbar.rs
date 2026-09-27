@@ -1,6 +1,6 @@
 use crate::app::App;
-use lekhani_core::types::Theme;
 use egui::Color32;
+use lekhani_core::types::Theme;
 
 impl App {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {

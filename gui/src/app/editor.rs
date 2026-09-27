@@ -1,8 +1,8 @@
 use crate::app::App;
+use egui::{Color32, ScrollArea, TextEdit};
 use lekhani_core::completions;
 use lekhani_core::lexer;
 use lekhani_core::types::Theme;
-use egui::{Color32, ScrollArea, TextEdit};
 use std::time::Instant;
 
 impl App {
