@@ -39,7 +39,7 @@ export default function Download() {
               Windows (.exe)
             </a>
             <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-stable/lekhani-latex_0.1.0_amd64.deb"
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-stable/lekhani-latex_0.1.0-1_amd64.deb"
               className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
               target="_blank"
               rel="noopener noreferrer"
@@ -78,7 +78,7 @@ export default function Download() {
               Windows (.exe)
             </a>
             <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-nightly/lekhani-latex_0.1.0_amd64.deb"
+              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-nightly/lekhani-latex_0.1.0-1_amd64.deb"
               className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
               target="_blank"
               rel="noopener noreferrer"
