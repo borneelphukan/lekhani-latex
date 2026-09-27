@@ -10,8 +10,8 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-use lekhani_core::types::CompilerConfig;
 use super::parser::{extract_errors, extract_warnings, read_log_fatal};
+use lekhani_core::types::CompilerConfig;
 
 #[derive(Debug, Clone)]
 pub enum CompileEvent {

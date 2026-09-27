@@ -19,8 +19,8 @@ fn error_line_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"l\.(\d+)").unwrap())
 }
 
-use lekhani_compiler::compiler::CompileEvent;
 use crate::preview::PreviewEvent;
+use lekhani_compiler::compiler::CompileEvent;
 use lekhani_core::types::*;
 
 #[derive(Clone)]

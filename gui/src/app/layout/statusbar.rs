@@ -1,6 +1,6 @@
 use crate::app::App;
-use lekhani_compiler::compiler::CompileStatus;
 use egui::Color32;
+use lekhani_compiler::compiler::CompileStatus;
 
 impl App {
     pub(crate) fn status_bar(&mut self, ui: &mut egui::Ui) {

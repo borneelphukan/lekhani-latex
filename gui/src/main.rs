@@ -1,8 +1,8 @@
 #![windows_subsystem = "windows"]
 
 mod app;
-mod preview;
 mod components;
+mod preview;
 
 fn load_icon() -> Option<egui::IconData> {
     let icon_bytes = include_bytes!("../../assets/logo.png");
