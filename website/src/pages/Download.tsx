@@ -1,4 +1,4 @@
-import { Download as DownloadIcon, Box, Sparkles } from 'lucide-react';
+import { Download as DownloadIcon, Box } from 'lucide-react';
 
 export default function Download() {
   return (
@@ -10,85 +10,111 @@ export default function Download() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8 w-full max-w-4xl">
-        {/* Stable Release */}
-        <div className="flex flex-col p-8 rounded-3xl bg-white border border-gray-200 shadow-sm hover:shadow-lg transition-all relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-1 bg-brand-500"></div>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-brand-50 text-brand-600 rounded-xl">
-              <Box size={24} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-serif text-gray-900">Stable Release</h2>
-              <span className="text-sm font-medium text-brand-600">From main branch</span>
-            </div>
-          </div>
-          
-          <p className="text-gray-500 mb-8 flex-1">
-            The recommended choice for most users. Stable releases are thoroughly tested and provide the most reliable experience for your daily writing.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latexSetup.exe"
-              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <DownloadIcon size={18} />
-              Windows (.exe)
-            </a>
-            <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-stable/lekhani-latex_0.1.0-1_amd64.deb"
-              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors text-sm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <DownloadIcon size={18} />
-              Ubuntu (.deb)
-            </a>
-          </div>
-        </div>
+      <table className="w-full max-w-4xl mx-auto border-collapse border-border mb-8">
+        <thead>
+          <tr className="border-b border-border/50">
+            <th className="p-4 text-left text-sm font-medium text-gray-500">Platform</th>
+            <th className="p-4 text-left text-sm font-medium text-gray-500">Package</th>
+            <th className="p-4 text-left text-sm font-medium text-gray-500">Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">Windows</td>
+            <td className="p-4 text-gray-500">.exe Installer</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-stable/lekhani-latexSetup.exe"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download Stable
+              </a>
+            </td>
+          </tr>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">macOS</td>
+            <td className="p-4 text-gray-500">.dmg Installer</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download/macos-stable/lekhani-latex.dmg"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download macOS
+              </a>
+            </td>
+          </tr>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">Linux (Debian/Ubuntu)</td>
+            <td className="p-4 text-gray-500">.deb Package</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download/linux-deb/lekhani-latex_*.deb"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download .deb
+              </a>
+            </td>
+          </tr>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">Linux (RPM)</td>
+            <td className="p-4 text-gray-500">.rpm Package</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download-linux-rpm/lekhani-latex-*.rpm"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download .rpm
+              </a>
+            </td>
+          </tr>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">Linux (AppImage)</td>
+            <td className="p-4 text-gray-500">AppImage</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download-linux-appimage/lekhani-latex-*-linux-x86_64.AppImage"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download AppImage
+              </a>
+            </td>
+          </tr>
+          <tr className="border-b border-border/50 hover:bg-gray-50">
+            <td className="p-4 font-medium text-gray-900">Linux (Tarball)</td>
+            <td className="p-4 text-gray-500">.tar.gz Archive</td>
+            <td className="p-4">
+              <a 
+                href="https://github.com/borneelphukan/lekhani-latex/releases/download-linux-tarball/lekhani-latex-*.tar.gz"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors py-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <DownloadIcon size={18} />
+                Download .tar.gz
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-        {/* Nightly Release */}
-        <div className="flex flex-col p-8 rounded-3xl bg-white border border-gray-200 shadow-sm hover:shadow-lg transition-all relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-1 bg-purple-500"></div>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-              <Sparkles size={24} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-serif text-gray-900">Nightly Release</h2>
-              <span className="text-sm font-medium text-purple-600">From dev branch</span>
-            </div>
-          </div>
-          
-          <p className="text-gray-500 mb-8 flex-1">
-            For those who want to test the latest features and improvements. Updated regularly with the newest code from our development branch.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latexSetup.exe"
-              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <DownloadIcon size={18} />
-              Windows (.exe)
-            </a>
-            <a 
-              href="https://github.com/borneelphukan/lekhani-latex/releases/download/ubuntu-nightly/lekhani-latex_0.1.0-1_amd64.deb"
-              className="flex items-center justify-center gap-2 flex-1 py-3 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors text-sm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <DownloadIcon size={18} />
-              Ubuntu (.deb)
-            </a>
-          </div>
-        </div>
-      </div>
+      <p className="text-center text-sm text-gray-500 mt-4">
+        All downloads are free and open source.
+      </p>
     </div>
   );
 }
