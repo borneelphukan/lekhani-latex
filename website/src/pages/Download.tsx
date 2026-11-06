@@ -1,4 +1,4 @@
-import { Download as DownloadIcon, Box, Sparkles } from 'lucide-react';
+import { Download as DownloadIcon, Box } from 'lucide-react';
 
 export default function Download() {
   return (
@@ -36,34 +36,6 @@ export default function Download() {
           >
             <DownloadIcon size={18} />
             Download Stable
-          </a>
-        </div>
-
-        {/* Nightly Release */}
-        <div className="flex flex-col p-8 rounded-3xl bg-white border border-gray-200 shadow-sm hover:shadow-lg transition-all relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-1 bg-purple-500"></div>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-              <Sparkles size={24} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-serif text-gray-900">Nightly Release</h2>
-              <span className="text-sm font-medium text-purple-600">From dev branch</span>
-            </div>
-          </div>
-          
-          <p className="text-gray-500 mb-8 flex-1">
-            For those who want to test the latest features and improvements. Updated regularly with the newest code from our development branch.
-          </p>
-          
-          <a 
-            href="https://github.com/borneelphukan/lekhani-latex/releases/download/windows-nightly/lekhani-latexSetup.exe"
-            className="flex items-center justify-center gap-2 w-full py-4 rounded-xl bg-white border-2 border-gray-200 text-gray-900 font-medium hover:border-gray-900 transition-colors"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <DownloadIcon size={18} />
-            Download Nightly
           </a>
         </div>
       </div>
