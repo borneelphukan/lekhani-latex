@@ -11,7 +11,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use super::parser::{extract_errors, extract_warnings, read_log_fatal};
-use crate::types::CompilerConfig;
+use lekhani_core::types::CompilerConfig;
 
 #[derive(Debug, Clone)]
 pub enum CompileEvent {

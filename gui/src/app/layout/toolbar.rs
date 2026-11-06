@@ -1,6 +1,6 @@
 use crate::app::App;
-use crate::types::Theme;
 use egui::Color32;
+use lekhani_core::types::Theme;
 
 impl App {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {
@@ -11,9 +11,8 @@ impl App {
             let is_compiling = compile_enabled
                 && matches!(
                     self.active_tab().compiler.status(),
-                    crate::compiler::CompileStatus::Running
+                    lekhani_compiler::compiler::CompileStatus::Running
                 );
-
             let button_text = if is_compiling {
                 "  \u{23F3}  Compiling…  "
             } else {

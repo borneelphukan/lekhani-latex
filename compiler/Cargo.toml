@@ -1,0 +1,9 @@
+[package]
+name = "lekhani-compiler"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+lekhani-core = { path = "../core" }
