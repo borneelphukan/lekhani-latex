@@ -1,0 +1,407 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ["main", "optimize"]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+  # Pull requests run the full build matrix as a validation run: the version is
+  # not bumped and nothing is published (see the guards below).
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    # Version resolution is cheap; keep it on Linux for PR validation runs.
+    runs-on: ubuntu-latest
+    if: "github.event_name == 'pull_request' || !contains(github.event.head_commit.message, 'chore: bump version')"
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      # On pull requests no bump commit exists, so fall back to the event SHA.
+      COMMIT_SHA: ${{ steps.commit.outputs.SHA || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Resolve next version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          current=$(sed -n 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\)"/\1/p' Cargo.toml | head -n1)
+          if [ -z "$current" ]; then
+            echo "Could not read version from Cargo.toml" >&2
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Validation build: never mutate the repo, just reuse the current version.
+            new_version="$current"
+            echo "Pull request build - using current version $new_version without bumping"
+          else
+            IFS=. read -r major minor patch <<< "$current"
+            new_version="$major.$minor.$((patch + 1))"
+            sed -i "0,/^version = \"$current\"/s//version = \"$new_version\"/" Cargo.toml
+            sed -i "s/^AppVersion=.*/AppVersion=$new_version/" setup.iss
+            echo "Bumped to $new_version"
+          fi
+
+          echo "VERSION=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump and create PR
+        id: commit
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="chore/bump-version-${{ steps.version.outputs.VERSION }}"
+          git checkout -b "$branch"
+          git add Cargo.toml setup.iss
+          git commit -m "chore: bump version to ${{ steps.version.outputs.VERSION }}"
+          echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push -f -u origin "$branch"
+          gh pr create \
+            --title "chore: bump version to ${{ steps.version.outputs.VERSION }}" \
+            --body "Automated version bump" \
+            --base main \
+            --head "$branch" || true
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            label: 64-bit
+            target: x86_64-pc-windows-msvc
+            installer: true
+          - arch: x86
+            label: 32-bit
+            target: i686-pc-windows-msvc
+            installer: false
+          - arch: arm64
+            label: ARM64
+            target: aarch64-pc-windows-msvc
+            installer: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      # assets/logo.ico is committed to the repository and is embedded by
+      # gui/build.rs, so no ImageMagick conversion step is needed.
+      - name: Build lekhani-latex (${{ matrix.label }})
+        run: cargo build --release --target ${{ matrix.target }} -p lekhani-latex
+
+      - name: Build Installer (Inno Setup)
+        if: matrix.installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "target\release" | Out-Null
+          Copy-Item "target\${{ matrix.target }}\release\lekhani-latex.exe" "target\release\lekhani-latex.exe" -Force
+          iscc setup.iss
+
+      - name: Build Portable zip (${{ matrix.label }})
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.VERSION }}"
+          $stage = "portable\lekhani-latex-$version-windows-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\${{ matrix.target }}\release\lekhani-latex.exe" "$stage\lekhani-latex.exe"
+          Copy-Item "README.md" "$stage\README.md"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\lekhani-latex-$version-windows-${{ matrix.arch }}-portable.zip" -Force
+
+      - name: Upload Windows artifacts (${{ matrix.label }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            Output\*.exe
+            dist\*.zip
+          if-no-files-found: ignore
+          retention-days: 1
+
+  debian-x86_64:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      # Package metadata lives in gui/Cargo.toml ([package.metadata.deb]).
+      - name: Build Debian package
+        run: cargo deb -p lekhani-latex
+
+      - name: Upload Debian Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian
+          path: target/debian/*.deb
+          retention-days: 1
+
+  rpm-x86_64:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config rpm
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
+
+      # Package metadata lives in gui/Cargo.toml ([package.metadata.generate-rpm]).
+      - name: Build RPM package (Fedora / RHEL / openSUSE)
+        run: cargo generate-rpm -p gui
+
+      - name: Inspect RPM
+        run: |
+          rpm -qpi target/generate-rpm/*.rpm || true
+          rpm -qpl target/generate-rpm/*.rpm || true
+
+      - name: Upload RPM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: target/generate-rpm/*.rpm
+          retention-days: 1
+
+  tarball-x86_64:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
+
+      - name: Build tarball
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ needs.prepare.outputs.VERSION }}"
+          TAR_DIR="lekhani-latex-${VERSION}-linux-x64"
+          mkdir -p "$TAR_DIR/assets"
+          cp target/release/lekhani-latex "$TAR_DIR/"
+          cp README.md "$TAR_DIR/"
+          cp assets/logo.png "$TAR_DIR/assets/"
+          cp assets/lekhani-latex.desktop "$TAR_DIR/"
+          tar -czf "dist/$TAR_DIR.tar.gz" "$TAR_DIR"
+
+      - name: Upload tarball Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  appimage-x86_64:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
+
+      - name: Build AppImage
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ needs.prepare.outputs.VERSION }}"
+          APPDIR="AppDir"
+
+          mkdir -p "$APPDIR/usr/bin" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp target/release/lekhani-latex "$APPDIR/usr/bin/"
+          cp assets/lekhani-latex.desktop "$APPDIR/usr/share/applications/"
+          cp assets/lekhani-latex.desktop "$APPDIR/lekhani-latex.desktop"
+          cp assets/logo.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/lekhani-latex.png"
+          cp assets/logo.png "$APPDIR/lekhani-latex.png"
+
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/lekhani-latex" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          curl -sL "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -o appimagetool
+          chmod +x appimagetool
+          APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool "$APPDIR" "dist/lekhani-latex-${VERSION}-linux-x86_64.AppImage"
+
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+          retention-days: 1
+
+  build-macos:
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build lekhani-latex
+        run: cargo build --release -p lekhani-latex
+
+      - name: Create macOS app bundle
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.VERSION }}"
+          APP="Lekhani LaTeX.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/lekhani-latex "$APP/Contents/MacOS/lekhani-latex"
+          cp assets/logo.png "$APP/Contents/Resources/logo.png"
+
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Lekhani LaTeX</string>
+            <key>CFBundleDisplayName</key>
+            <string>Lekhani LaTeX</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.borneelphukan.lekhani-latex</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleExecutable</key>
+            <string>lekhani-latex</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.15</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          mkdir -p dmg
+          cp -R "$APP" dmg/
+          mkdir -p dist
+          hdiutil create -volname "Lekhani LaTeX" -srcfolder dmg -ov -format UDZO "dist/lekhani-latex-${VERSION}-macos.dmg"
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+          retention-days: 1
+
+  publish-stable:
+    needs: [prepare, windows, debian-x86_64, rpm-x86_64, tarball-x86_64, appimage-x86_64, build-macos]
+    # Validation runs triggered by pull requests never publish a release.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.VERSION }}
+          name: Release v${{ needs.prepare.outputs.VERSION }}
+          files: dist/*
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
