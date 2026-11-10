@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "main", "workflow-optimization" ]
+    branches: ["main", "optimize"]
     paths-ignore:
       - 'README.md'
       - 'docs/**'
@@ -21,70 +21,66 @@ permissions:
 jobs:
   prepare:
     # Version resolution is cheap; keep it on Linux for PR validation runs.
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'windows-latest' }}
+    runs-on: ubuntu-latest
     if: "github.event_name == 'pull_request' || !contains(github.event.head_commit.message, 'chore: bump version')"
     outputs:
       VERSION: ${{ steps.version.outputs.VERSION }}
       # On pull requests no bump commit exists, so fall back to the event SHA.
       COMMIT_SHA: ${{ steps.commit.outputs.SHA || github.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Resolve next version
         id: version
-        shell: pwsh
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          $cargo = Get-Content Cargo.toml -Raw
-          if ($cargo -notmatch 'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
-            Write-Error "Could not read version from Cargo.toml"
+          set -euo pipefail
+          current=$(sed -n 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\)"/\1/p' Cargo.toml | head -n1)
+          if [ -z "$current" ]; then
+            echo "Could not read version from Cargo.toml" >&2
             exit 1
-          }
+          fi
 
-          if ($env:EVENT_NAME -eq 'pull_request') {
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             # Validation build: never mutate the repo, just reuse the current version.
-            $newVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
-            Write-Host "Pull request build - using current version $newVersion without bumping"
-          }
-          else {
-            $newVersion = "$([int]$Matches[1]).$([int]$Matches[2]).$([int]$Matches[3] + 1)"
-            $regex = [regex]'(version\s*=\s*")(\d+\.\d+\.\d+)(")'
-            $cargo = $regex.Replace($cargo, "`${1}$newVersion`${3}", 1)
-            Set-Content Cargo.toml $cargo -NoNewline
+            new_version="$current"
+            echo "Pull request build - using current version $new_version without bumping"
+          else
+            IFS=. read -r major minor patch <<< "$current"
+            new_version="$major.$minor.$((patch + 1))"
+            sed -i "0,/^version = \"$current\"/s//version = \"$new_version\"/" Cargo.toml
+            sed -i "s/^AppVersion=.*/AppVersion=$new_version/" setup.iss
+            echo "Bumped to $new_version"
+          fi
 
-            $iss = Get-Content setup.iss -Raw
-            $iss = $iss -replace '(AppVersion=)(\d+\.\d+\.\d+)', "`${1}$newVersion"
-            Set-Content setup.iss $iss -NoNewline
-            Write-Host "Bumped to $newVersion"
-          }
-
-          echo "VERSION=$newVersion" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$new_version" >> "$GITHUB_OUTPUT"
 
       - name: Commit version bump and create PR
         id: commit
         if: github.event_name != 'pull_request'
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          $branch = "chore/bump-version-${{ steps.version.outputs.VERSION }}"
-          git checkout -b $branch
+          branch="chore/bump-version-${{ steps.version.outputs.VERSION }}"
+          git checkout -b "$branch"
           git add Cargo.toml setup.iss
           git commit -m "chore: bump version to ${{ steps.version.outputs.VERSION }}"
-          $sha = git rev-parse HEAD
-          echo "SHA=$sha" >> $env:GITHUB_OUTPUT
-          git push -f -u origin $branch
-          gh pr create --title "chore: bump version to ${{ steps.version.outputs.VERSION }}" --body "Automated version bump" --base main --head $branch
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Ignoring gh pr create error (PR likely already exists)"
-            exit 0
-          }
+          echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push -f -u origin "$branch"
+          gh pr create \
+            --title "chore: bump version to ${{ steps.version.outputs.VERSION }}" \
+            --body "Automated version bump" \
+            --base main \
+            --head "$branch" || true
 
   windows:
     needs: prepare
@@ -96,60 +92,49 @@ jobs:
           - arch: x64
             label: 64-bit
             target: x86_64-pc-windows-msvc
-            pdfium: pdfium-win-x64.tgz
-            setup: setup.iss
+            installer: true
           - arch: x86
             label: 32-bit
             target: i686-pc-windows-msvc
-            pdfium: pdfium-win-x86.tgz
-            setup: setup-x86.iss
+            installer: false
           - arch: arm64
             label: ARM64
             target: aarch64-pc-windows-msvc
-            pdfium: pdfium-win-arm64.tgz
-            setup: setup-arm64.iss
+            installer: false
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
 
-      - name: Convert Logo to ICO
-        run: magick -background none -density 256 assets\icons\logo.svg -define icon:auto-resize="256,128,64,48,32,16" assets\logo.ico
-
-      - name: Build nixobdo-pdf (${{ matrix.label }})
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Download and Extract pdfium
-        run: |
-          Invoke-WebRequest -Uri https://github.com/bblanchon/pdfium-binaries/releases/latest/download/${{ matrix.pdfium }} -OutFile pdfium.tgz
-          tar -xzf pdfium.tgz
-          Get-ChildItem -Recurse -Filter pdfium.dll | Copy-Item -Destination .
-
-      - name: Stage binary for packaging
-        run: |
-          New-Item -ItemType Directory -Force -Path "target\release" | Out-Null
-          Copy-Item "target\${{ matrix.target }}\release\nixobdo-pdf.exe" "target\release\nixobdo-pdf.exe" -Force
+      # assets/logo.ico is committed to the repository and is embedded by
+      # gui/build.rs, so no ImageMagick conversion step is needed.
+      - name: Build lekhani-latex (${{ matrix.label }})
+        run: cargo build --release --target ${{ matrix.target }} -p lekhani-latex
 
       - name: Build Installer (Inno Setup)
-        run: iscc ${{ matrix.setup }}
+        if: matrix.installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "target\release" | Out-Null
+          Copy-Item "target\${{ matrix.target }}\release\lekhani-latex.exe" "target\release\lekhani-latex.exe" -Force
+          iscc setup.iss
 
       - name: Build Portable zip (${{ matrix.label }})
         shell: pwsh
         run: |
           $version = "${{ needs.prepare.outputs.VERSION }}"
-          $stage = "portable\nixobdo-pdf-$version-windows-${{ matrix.arch }}"
+          $stage = "portable\lekhani-latex-$version-windows-${{ matrix.arch }}"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item "target\${{ matrix.target }}\release\nixobdo-pdf.exe" "$stage\nixobdo-pdf.exe"
-          Copy-Item "pdfium.dll" "$stage\pdfium.dll"
-          Copy-Item "LICENSE" "$stage\LICENSE"
+          Copy-Item "target\${{ matrix.target }}\release\lekhani-latex.exe" "$stage\lekhani-latex.exe"
+          Copy-Item "README.md" "$stage\README.md"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Compress-Archive -Path "$stage\*" -DestinationPath "dist\nixobdo-pdf-$version-windows-${{ matrix.arch }}-portable.zip" -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\lekhani-latex-$version-windows-${{ matrix.arch }}-portable.zip" -Force
 
       - name: Upload Windows artifacts (${{ matrix.label }})
         uses: actions/upload-artifact@v4
@@ -158,18 +143,16 @@ jobs:
           path: |
             Output\*.exe
             dist\*.zip
+          if-no-files-found: ignore
           retention-days: 1
 
   debian-x86_64:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
-
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
 
       - name: Install system dependencies
         run: |
@@ -177,38 +160,29 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Download and extract PDFium
-        run: |
-          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz -o pdfium.tgz
-          tar -xzf pdfium.tgz
-          cp $(find . -name "libpdfium.so" | head -n 1) libpdfium.so
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
 
-      - name: Build nixobdo-pdf
-        run: cargo build --release
-
+      # Package metadata lives in gui/Cargo.toml ([package.metadata.deb]).
       - name: Build Debian package
-        run: |
-          mkdir -p dist
-          chmod +x packaging/linux/*.sh
-          VERSION="${{ needs.prepare.outputs.VERSION }}"
-          ./packaging/linux/build-deb.sh target/release/nixobdo-pdf libpdfium.so "$VERSION" dist
+        run: cargo deb -p lekhani-latex
 
       - name: Upload Debian Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: debian-installer
-          path: dist/*
+          name: debian
+          path: target/debian/*.deb
           retention-days: 1
 
   rpm-x86_64:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
 
@@ -218,45 +192,39 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config rpm
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Download and extract PDFium
-        run: |
-          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz -o pdfium.tgz
-          tar -xzf pdfium.tgz
-          cp $(find . -name "libpdfium.so" | head -n 1) libpdfium.so
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
 
-      - name: Build nixobdo-pdf
-        run: cargo build --release
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
 
+      # Package metadata lives in gui/Cargo.toml ([package.metadata.generate-rpm]).
       - name: Build RPM package (Fedora / RHEL / openSUSE)
+        run: cargo generate-rpm -p gui
+
+      - name: Inspect RPM
         run: |
-          mkdir -p dist
-          chmod +x packaging/rpm/build-rpm.sh
-          VERSION="${{ needs.prepare.outputs.VERSION }}"
-          ./packaging/rpm/build-rpm.sh target/release/nixobdo-pdf libpdfium.so "$VERSION" dist
-          rpm -qpi dist/*.rpm || true
-          rpm -qpl dist/*.rpm || true
+          rpm -qpi target/generate-rpm/*.rpm || true
+          rpm -qpl target/generate-rpm/*.rpm || true
 
       - name: Upload RPM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rpm-installer
-          path: dist/*.rpm
+          name: rpm
+          path: target/generate-rpm/*.rpm
           retention-days: 1
 
   tarball-x86_64:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
-
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
 
       - name: Install system dependencies
         run: |
@@ -264,48 +232,40 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Download and extract PDFium
-        run: |
-          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz -o pdfium.tgz
-          tar -xzf pdfium.tgz
-          cp $(find . -name "libpdfium.so" | head -n 1) libpdfium.so
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
 
       - name: Build tarball
         run: |
+          set -euo pipefail
           mkdir -p dist
           VERSION="${{ needs.prepare.outputs.VERSION }}"
-          
-          TAR_DIR="nixobdo-pdf-${VERSION}-linux-x64"
-          mkdir -p "$TAR_DIR/assets/icons"
-          cp target/release/nixobdo-pdf libpdfium.so packaging/linux/nixobdo-pdf.desktop packaging/linux/install.sh packaging/linux/uninstall.sh "$TAR_DIR/"
-          [ -f assets/logo.png ] && cp assets/logo.png "$TAR_DIR/assets/" || true
-          [ -f assets/icons/logo.svg ] && cp assets/icons/logo.svg "$TAR_DIR/assets/icons/" || true
+          TAR_DIR="lekhani-latex-${VERSION}-linux-x64"
+          mkdir -p "$TAR_DIR/assets"
+          cp target/release/lekhani-latex "$TAR_DIR/"
+          cp README.md "$TAR_DIR/"
+          cp assets/logo.png "$TAR_DIR/assets/"
+          cp assets/lekhani-latex.desktop "$TAR_DIR/"
           tar -czf "dist/$TAR_DIR.tar.gz" "$TAR_DIR"
 
       - name: Upload tarball Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tarball-installer
-          path: dist/*
+          name: tarball
+          path: dist/*.tar.gz
           retention-days: 1
 
   appimage-x86_64:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
-
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
-
-      - name: Install FUSE dependencies for AppImage
-        run: sudo apt-get update && sudo apt-get install -y libfuse2
 
       - name: Install system dependencies
         run: |
@@ -313,87 +273,109 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev pkg-config
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Download and extract PDFium
-        run: |
-          curl -fsSL https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz -o pdfium.tgz
-          tar -xzf pdfium.tgz
-          cp $(find . -name "libpdfium.so" | head -n 1) libpdfium.so
+      - name: Build release binary
+        run: cargo build --release -p lekhani-latex
 
       - name: Build AppImage
         run: |
+          set -euo pipefail
           mkdir -p dist
           VERSION="${{ needs.prepare.outputs.VERSION }}"
-          
-          # Create AppDir structure
-          mkdir -p "AppImage/nixobdo-pdf-${VERSION}-linux-x86_64"
-          cp target/release/nixobdo-pdf AppImage/nixobdo-pdf-${VERSION}-linux-x86_64/
-          cp libpdfium.so AppImage/nixobdo-pdf-${VERSION}-linux-x86_64/
-          cp packaging/linux/nixobdo-pdf.desktop AppImage/nixobdo-pdf-${VERSION}-linux-x86_64/
-          cp packaging/linux/install.sh AppImage/nixobdo-pdf-${VERSION}-linux-x86_64/
-          
-          # Copy icon file for desktop entry
-          cp assets/logo.png AppImage/nixobdo-pdf-${VERSION}-linux-x86_64/nixobdo-pdf.png
-          
-          # Use appimagetool to create AppImage
-          curl -sL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -o appimagetool
+          APPDIR="AppDir"
+
+          mkdir -p "$APPDIR/usr/bin" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp target/release/lekhani-latex "$APPDIR/usr/bin/"
+          cp assets/lekhani-latex.desktop "$APPDIR/usr/share/applications/"
+          cp assets/lekhani-latex.desktop "$APPDIR/lekhani-latex.desktop"
+          cp assets/logo.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/lekhani-latex.png"
+          cp assets/logo.png "$APPDIR/lekhani-latex.png"
+
+          cat > "$APPDIR/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/lekhani-latex" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+          curl -sL "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -o appimagetool
           chmod +x appimagetool
-          ./appimagetool AppImage/nixobdo-pdf-${VERSION}-linux-x86_64 "dist/nixobdo-pdf-${VERSION}-linux-x86_64.AppImage"
+          APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool "$APPDIR" "dist/lekhani-latex-${VERSION}-linux-x86_64.AppImage"
 
       - name: Upload AppImage Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: appimage-installer
-          path: dist/*
+          name: appimage
+          path: dist/*.AppImage
           retention-days: 1
 
   build-macos:
     needs: prepare
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
 
-      - name: Install ImageMagick
-        run: brew install imagemagick
-
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Build nixobdo-pdf
-        run: cargo build --release
+      - name: Build lekhani-latex
+        run: cargo build --release -p lekhani-latex
 
-      - name: Verify and prepare DMG source
+      - name: Create macOS app bundle
         run: |
-          set -e
-          echo "Checking build output..."
-          ls -la target/release/
-          if [ -f target/release/nixobdo-pdf ]; then
-            echo "Binary found, copying to dist..."
-            mkdir -p dist
-            cp target/release/nixobdo-pdf dist/nixobdo-pdf
-          else
-            echo "ERROR: nixobdo-pdf binary not found in target/release/"
-            exit 1
-          fi
-
-      - name: Create DMG
-        run: |
+          set -euo pipefail
           VERSION="${{ needs.prepare.outputs.VERSION }}"
-          DMG_NAME="nixobdo-pdf-${VERSION}-macos.dmg"
-          hdiutil create -volname "nixobdo-pdf" -srcfolder dist -format UDZO -o dist/$DMG_NAME
+          APP="Lekhani LaTeX.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/lekhani-latex "$APP/Contents/MacOS/lekhani-latex"
+          cp assets/logo.png "$APP/Contents/Resources/logo.png"
 
-      - name: Upload Artifact
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Lekhani LaTeX</string>
+            <key>CFBundleDisplayName</key>
+            <string>Lekhani LaTeX</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.borneelphukan.lekhani-latex</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleExecutable</key>
+            <string>lekhani-latex</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.15</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+          mkdir -p dmg
+          cp -R "$APP" dmg/
+          mkdir -p dist
+          hdiutil create -volname "Lekhani LaTeX" -srcfolder dmg -ov -format UDZO "dist/lekhani-latex-${VERSION}-macos.dmg"
+
+      - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: dist/
+          name: macos
+          path: dist/*.dmg
           retention-days: 1
 
   publish-stable:
@@ -402,48 +384,18 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.COMMIT_SHA }}
 
-      - name: Download Windows Installer
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-installer
-          path: dist/
-
-      - name: Download Debian Installer
-        uses: actions/download-artifact@v4
-        with:
-          name: debian-installer
-          path: dist/
-
-      - name: Download RPM Installer
-        uses: actions/download-artifact@v4
-        with:
-          name: rpm-installer
-          path: dist/
-
-      - name: Download tarball Installer
-        uses: actions/download-artifact@v4
-        with:
-          name: tarball-installer
-          path: dist/
-
-      - name: Download AppImage Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: appimage-installer
-          path: dist/
-
-      - name: Download macOS DMG
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-dmg
-          path: dist/
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.VERSION }}
           name: Release v${{ needs.prepare.outputs.VERSION }}
