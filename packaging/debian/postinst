@@ -1,0 +1,25 @@
+#!/bin/sh
+# Refresh the desktop and icon caches after files are installed or removed.
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    [ -x /usr/bin/update-desktop-database ] &&
+        update-desktop-database -q /usr/share/applications || true
+    if [ -x /usr/bin/gtk-update-icon-cache ]; then
+        gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+    elif [ -x /usr/bin/update-icon-cache ]; then
+        update-icon-cache -q -f /usr/share/icons/hicolor || true
+    fi
+    exit 0
+fi
+
+if [ -x /usr/bin/update-desktop-database ]; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+if [ -x /usr/bin/gtk-update-icon-cache ]; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+elif [ -x /usr/bin/update-icon-cache ]; then
+    update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+
+exit 0

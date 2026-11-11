@@ -34,7 +34,7 @@ impl App {
             }
             ui.separator();
 
-            let has_next = num_pages.map_or(true, |n| page + 1 < n);
+            let has_next = num_pages.is_none_or(|n| page + 1 < n);
             ui.add_enabled_ui(has_next, |ui| {
                 if ui
                     .add_sized(btn_size, crate::components::button::icon("\u{25B6}"))
@@ -162,7 +162,7 @@ impl App {
                     if avail_width > 0.0 {
                         let fit = avail_width / img_size.x;
                         if fit < 1.0 {
-                            zoom = fit.max(0.25).min(4.0);
+                            zoom = fit.clamp(0.25, 4.0);
                         }
                     }
                 }

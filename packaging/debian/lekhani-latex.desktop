@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Lekhani Latex
+GenericName=LaTeX Editor
+Comment=A modern, easy-to-use LaTeX editor with live PDF preview
+Exec=lekhani-latex
+Icon=lekhani-latex
+Terminal=false
+StartupNotify=true
+StartupWMClass=lekhani-latex
+Categories=Office;Publishing;TextEditor;
+Keywords=latex;tex;editor;pdf;preview;typesetting;

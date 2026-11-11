@@ -1,2 +1,25 @@
 /target
 recipe.json
+
+# Distribution artifacts produced by packaging/ and the release workflow
+/dist/
+/Output/
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+*.flatpak
+
+# Website build output
+website/dist/
+website/node_modules/
+
+# Python bytecode from packaging/apt
+__pycache__/
+*.pyc
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~

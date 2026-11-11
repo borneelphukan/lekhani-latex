@@ -41,9 +41,11 @@ fn main() -> Result<(), eframe::Error> {
         "Lekhani Latex",
         options,
         Box::new(|cc| {
-            let mut style = egui::Style::default();
-            style.visuals = egui::Visuals::dark();
             let accent = egui::Color32::from_rgb(180, 180, 180);
+            let mut style = egui::Style {
+                visuals: egui::Visuals::dark(),
+                ..Default::default()
+            };
             style.visuals.selection.bg_fill = accent;
             style.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(20, 20, 25, 230);
             style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(25, 25, 30, 230);

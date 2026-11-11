@@ -1,0 +1,32 @@
+# cargo-audit configuration, read automatically from .cargo/audit.toml by
+# `cargo audit` (see .github/workflows/audit.yml).
+#
+# Only ignore an advisory when it provably does not affect this project, for
+# example an unused feature or API, a target we do not ship, or a vulnerability
+# with no fixed release yet. Always record crate, reason and a revisit date so
+# the ignore can be re-checked when Cargo.lock changes.
+
+[advisories]
+# Advisory IDs that `cargo audit` should not report. Example entry:
+#   "RUSTSEC-2024-0001", # crate: unused feature; no fix yet, revisit 2026-12-01
+ignore = []
+
+# Uncomment to also warn about categories of informational advisories
+# (for example "unmaintained", "unsound", "yanked").
+# informational_warnings = ["unmaintained"]
+
+# Uncomment to only report advisories at or above a CVSS severity:
+# "none", "low", "medium", "high" or "critical".
+# severity_threshold = "low"
+
+# Uncomment to restrict advisories to the CPU architectures and operating
+# systems this project actually ships. Advisories with no platform restriction
+# are always included.
+# [target]
+# arch = ["x86_64", "aarch64"]
+# os = ["linux", "windows", "macos"]
+
+# Uncomment to make informational advisories fail the audit as well. Keep this
+# off until the project has triaged the existing informational findings.
+# [output]
+# deny = ["unmaintained"]

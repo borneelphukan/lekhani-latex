@@ -204,7 +204,7 @@ impl App {
                 let mut last_theme = None;
                 loop {
                     if let Ok(output) = std::process::Command::new("gsettings")
-                        .args(&["get", "org.gnome.desktop.interface", "color-scheme"])
+                        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
                         .output()
                     {
                         let s = String::from_utf8_lossy(&output.stdout);
@@ -306,15 +306,7 @@ impl App {
             .get("llm_api_key")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let key = if let Some(k) = key {
-            if !k.is_empty() {
-                Some(k)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let key = key.filter(|k| !k.is_empty());
         let tab_index = config
             .get("llm_settings_tab_index")
             .and_then(|v| v.as_u64())
@@ -510,8 +502,8 @@ impl App {
                         let mut j = 0;
                         while j < errors.len() {
                             let entry = &errors[j];
-                            if entry.starts_with("! ") {
-                                let err_code = entry[2..].trim().to_string();
+                            if let Some(stripped) = entry.strip_prefix("! ") {
+                                let err_code = stripped.trim().to_string();
                                 let mut line_num = 0;
                                 let mut context = String::new();
                                 if j + 1 < errors.len() && errors[j + 1].starts_with("l.") {
@@ -533,7 +525,7 @@ impl App {
                                     .buffer
                                     .text
                                     .lines()
-                                    .nth(line_num.checked_sub(1).unwrap_or(0))
+                                    .nth(line_num.saturating_sub(1))
                                     .unwrap_or("")
                                     .to_string();
                                 let error_syntax = if !source_line.is_empty() {
@@ -643,7 +635,7 @@ impl App {
                                 format!("Attempting to install package {}...", pkg),
                                 egui::Color32::from_rgb(200, 200, 100),
                             ));
-                            tab.status_message = format!("Installing package {}...", pkg).into();
+                            tab.status_message = format!("Installing package {}...", pkg);
                             let tx = self.update_tx.clone();
                             std::thread::spawn(move || {
                                 let output = std::process::Command::new("tlmgr")
@@ -691,7 +683,7 @@ impl App {
                     tab.preview_textures.insert(
                         *page,
                         ctx.load_texture(
-                            &format!("preview_{}_{}", tab.title, page),
+                            format!("preview_{}_{}", tab.title, page),
                             img.clone(),
                             egui::TextureOptions::LINEAR,
                         ),
@@ -1166,18 +1158,15 @@ impl App {
                 }
                 UpdateMessage::DownloadComplete(result) => {
                     self.update_state = UpdateState::None;
-                    match result {
-                        Ok(path) => {
-                            let mut c = std::process::Command::new(&path);
-                            #[cfg(windows)]
-                            c.creation_flags(CREATE_NO_WINDOW);
-                            if let Err(_) = c.spawn() {
-                                // Toast notification not implemented; update state already None
-                            } else {
-                                std::process::exit(0);
-                            }
+                    if let Ok(path) = result {
+                        let mut c = std::process::Command::new(&path);
+                        #[cfg(windows)]
+                        c.creation_flags(CREATE_NO_WINDOW);
+                        if c.spawn().is_err() {
+                            // Toast notification not implemented; update state already None
+                        } else {
+                            std::process::exit(0);
                         }
-                        Err(_) => {}
                     }
                 }
                 UpdateMessage::CompilerDownloadProgress(progress) => {
@@ -1193,14 +1182,14 @@ impl App {
                         match result {
                             Ok(_) => {
                                 tab.status_message =
-                                    format!("Package {} installed successfully", pkg).into();
+                                    format!("Package {} installed successfully", pkg);
                                 tab.ai_output_log.push((
                                     format!("Package {} installed successfully", pkg),
                                     egui::Color32::from_rgb(60, 180, 75),
                                 ));
                             }
                             Err(e) => {
-                                tab.status_message = format!("Failed to install {}", pkg).into();
+                                tab.status_message = format!("Failed to install {}", pkg);
                                 tab.ai_output_log.push((
                                     format!("Failed to install {}: {}", pkg, e),
                                     egui::Color32::from_rgb(220, 60, 60),
@@ -1246,7 +1235,7 @@ impl App {
                                 for term in terminals {
                                     let mut spawn_cmd = std::process::Command::new(term);
                                     if term == "gnome-terminal" {
-                                        spawn_cmd.args(&[
+                                        spawn_cmd.args([
                                             "--",
                                             "bash",
                                             "-c",
@@ -1256,7 +1245,7 @@ impl App {
                                             ),
                                         ]);
                                     } else {
-                                        spawn_cmd.args(&[
+                                        spawn_cmd.args([
                                             "-e",
                                             "bash",
                                             "-c",
@@ -1799,7 +1788,7 @@ impl App {
             if !self.tabs.is_empty() {
                 ui.horizontal(|ui| {
                     for i in 0..tab_count {
-                        let is_dragging = self.tab_drag.map_or(false, |(idx, _)| idx == i);
+                        let is_dragging = self.tab_drag.is_some_and(|(idx, _)| idx == i);
                         let is_active = i == self.active_tab;
                         let title = if self.tabs[i].buffer.dirty {
                             format!("{} •", self.tabs[i].title)
@@ -1853,8 +1842,7 @@ impl App {
                                     .frame(false),
                                 )
                                 .clicked()
-                            {
-                                if !self.tabs[i].buffer.dirty
+                                && (!self.tabs[i].buffer.dirty
                                     || rfd::MessageDialog::new()
                                         .set_title("Unsaved Changes")
                                         .set_description(
@@ -1862,10 +1850,9 @@ impl App {
                                         )
                                         .set_buttons(rfd::MessageButtons::YesNo)
                                         .show()
-                                        == rfd::MessageDialogResult::Yes
-                                {
-                                    remove_tab = Some(i);
-                                }
+                                        == rfd::MessageDialogResult::Yes)
+                            {
+                                remove_tab = Some(i);
                             }
                         }
                     }
@@ -2006,15 +1993,14 @@ impl App {
                             if ui
                                 .button(egui::RichText::new("Clear").size(14.0).strong())
                                 .clicked()
+                                && !self.tabs.is_empty()
                             {
-                                if !self.tabs.is_empty() {
-                                    match self.output_panel_tab {
-                                        OutputPanelTab::Compiler => {
-                                            self.active_tab_mut().output_log.clear()
-                                        }
-                                        OutputPanelTab::AI => {
-                                            self.active_tab_mut().ai_output_log.clear()
-                                        }
+                                match self.output_panel_tab {
+                                    OutputPanelTab::Compiler => {
+                                        self.active_tab_mut().output_log.clear()
+                                    }
+                                    OutputPanelTab::AI => {
+                                        self.active_tab_mut().ai_output_log.clear()
                                     }
                                 }
                             }

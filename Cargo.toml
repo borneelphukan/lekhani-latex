@@ -14,7 +14,13 @@ license = "MIT"
 
 [workspace.dependencies]
 egui = "0.34"
-eframe = { version = "0.34", features = ["default"] }
+# `accesskit` is off: on Linux it pulls the zbus/atspi stack and quick-xml
+# 0.39, which has open security advisories. Re-enable it after upgrading to an
+# egui release that uses quick-xml >= 0.41. The explicit winit dependency
+# restores `winit/default` (Wayland dynamic loading and client-side
+# decorations), which disabling eframe's defaults also drops.
+eframe = { version = "0.34", default-features = false, features = ["default_fonts", "wayland", "web_screen_reader", "wgpu", "x11"] }
+winit = "0.30"
 regex = "1"
 image = "0.25"
 thiserror = "2"

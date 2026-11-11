@@ -3,13 +3,19 @@ name = "lekhani-latex"
 version.workspace = true
 edition.workspace = true
 description.workspace = true
+authors = ["Borneel Bikash Phukan <borneelphukan@gmail.com>"]
 license.workspace = true
+repository = "https://github.com/borneelphukan/lekhani-latex"
+homepage = "https://borneelphukan.github.io/lekhani-latex/"
+categories = ["text-editors", "gui"]
+keywords = ["latex", "tex", "editor", "pdf", "preview"]
 
 [dependencies]
 lekhani-core = { path = "../core" }
 lekhani-compiler = { path = "../compiler" }
 egui.workspace = true
 eframe.workspace = true
+winit.workspace = true
 regex.workspace = true
 image.workspace = true
 thiserror.workspace = true

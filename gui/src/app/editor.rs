@@ -727,11 +727,9 @@ impl App {
                 self.completion_selected -= 1;
             }
         }
-        if nav_down {
-            if !self.completion_matches.is_empty() {
-                self.completion_selected =
-                    (self.completion_selected + 1) % self.completion_matches.len();
-            }
+        if nav_down && !self.completion_matches.is_empty() {
+            self.completion_selected =
+                (self.completion_selected + 1) % self.completion_matches.len();
         }
 
         if self.completion_visible {
@@ -835,7 +833,7 @@ impl App {
                 let mut keep_visible = false;
                 if let Some(bslash) = before.rfind('\\') {
                     let partial = &before[bslash..];
-                    if partial.len() >= 1 && partial[1..].chars().all(|c| c.is_alphanumeric()) {
+                    if !partial.is_empty() && partial[1..].chars().all(|c| c.is_alphanumeric()) {
                         let matches = completions::find_completions(partial);
                         if !matches.is_empty() {
                             let new_matches: Vec<String> =

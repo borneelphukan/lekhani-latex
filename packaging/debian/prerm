@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove)
+        exit 0
+        ;;
+    upgrade|deconfigure)
+        exit 0
+        ;;
+    failed-upgrade)
+        exit 0
+        ;;
+esac
+
+exit 0

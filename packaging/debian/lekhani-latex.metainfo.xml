@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.borneelphukan.lekhaniLatex</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Lekhani Latex</name>
+  <summary>A modern LaTeX editor with live PDF preview</summary>
+  <description>
+    <p>
+      Lekhani Latex is a cross-platform desktop LaTeX editor with a live PDF
+      preview, syntax highlighting and command autocompletion. It supports
+      multiple open documents, undo and redo, automatic compilation on save,
+      and zoomable page-by-page preview navigation.
+    </p>
+    <p>
+      Compilation uses the local TeX distribution (for example TeX Live or
+      MiKTeX), while the inline preview uses mutool, Ghostscript or pdftoppm
+      when one of them is available.
+    </p>
+  </description>
+  <launchable type="desktop-id">lekhani-latex.desktop</launchable>
+  <provides>
+    <binary>lekhani-latex</binary>
+  </provides>
+  <developer id="io.github.borneelphukan">
+    <name>borneelphukan</name>
+  </developer>
+  <url type="homepage">https://borneelphukan.github.io/lekhani-latex/</url>
+  <url type="bugtracker">https://github.com/borneelphukan/lekhani-latex/issues</url>
+  <content_rating type="oars-1.1" />
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">1024</display_length>
+  </requires>
+  <releases>
+    <release version="0.0.5" date="2026-11-11">
+      <description>
+        <p>Current stable release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

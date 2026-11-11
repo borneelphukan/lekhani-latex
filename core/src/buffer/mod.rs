@@ -122,3 +122,9 @@ impl EditorBuffer {
         }
     }
 }
+
+impl Default for EditorBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "compiler/**"
+      - "gui/**"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "assets/**"
+      - "packaging/**"
+      - "installer/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "compiler/**"
+      - "gui/**"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "assets/**"
+      - "packaging/**"
+      - "installer/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # CI always builds from a warm cache; incremental artifacts only bloat the
+  # cache and increase runner memory/disk usage.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    name: fmt, clippy and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libx11-dev libxcb1-dev libxcb-composite0-dev libxcb-cursor-dev \
+            libxcb-image0-dev libxcb-icccm4-dev libxcb-keysyms1-dev \
+            libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxcb-xinerama0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev
+
+      # Pinned so a new stable release cannot introduce lints that fail an
+      # unrelated tag build. Bump deliberately in both workflows.
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        # Warnings are errors, so this is a hard gate.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
+      # The release profile is built by the Release workflow (and its tag
+      # quality gate), so rebuilding it here only duplicated a multi-minute
+      # compile without validating anything extra.
+
+  linux-assets:
+    name: packaging assets are consistent
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate desktop entry
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends desktop-file-utils
+          desktop-file-validate packaging/debian/lekhani-latex.desktop
+
+      - name: Validate AppStream metadata
+        run: |
+          sudo apt-get install -y --no-install-recommends appstream
+          appstreamcli validate --no-net packaging/debian/lekhani-latex.metainfo.xml
+
+      - name: Shell script syntax
+        run: |
+          bash -n packaging/debian/build-deb.sh
+          sh -n packaging/debian/postinst
+          sh -n packaging/debian/prerm
+          sh -n packaging/debian/postrm
+          bash -n packaging/linux/build-tarball.sh
+          bash -n packaging/linux/build-appimage.sh
+          bash -n packaging/rpm/build-rpm.sh
+          bash -n packaging/macos/build-dmg.sh
+          sh -n packaging/apt/install.sh
+          python3 -m py_compile packaging/apt/build-repo.py
