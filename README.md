@@ -1,44 +1,54 @@
-# Lekhani Latex
+# Lekhani LaTeX
 
-A cross-platform desktop LaTeX editor with live PDF preview, syntax highlighting, and autocompletion. Built with [egui](https://github.com/emilk/egui) (immediate-mode GUI) and [eframe](https://github.com/emilk/egui/tree/master/crates/eframe).
+Lekhani is a free desktop app for writing LaTeX documents. Write on one side of the window and preview the finished PDF on the other.
 
-## Features
+[Download Lekhani](https://github.com/borneelphukan/lekhani-latex/releases) · [Project website](https://borneelphukan.github.io/lekhani-latex/) · [Get help or report a problem](https://github.com/borneelphukan/lekhani-latex/issues)
 
-- **Syntax-highlighted editor** — Commands, math delimiters, braces, and comments are color-coded with dark/light theme support
-- **Live PDF preview** — Compile and view the resulting PDF inline (requires a PDF rasterizer: `mutool`, Ghostscript, or `pdftoppm`)
-- **Tabbed interface** — Open multiple `.tex` files simultaneously
-- **Autocompletion** — Type `\` followed by a partial command name to see matching LaTeX commands
-- **Undo/redo** — Full undo history per document
-- **Auto-compile** — Automatically recompile on save
-- **Zoom & page navigation** — Pinch-to-zoom, Ctrl+scroll zoom, and page-by-page navigation in the preview panel
+## What you can do
 
-## Requirements
+- Write and edit multiple LaTeX files in tabs.
+- See LaTeX commands and document structure highlighted as you type.
+- Get suggestions for LaTeX commands while typing.
+- Compile your document and view the PDF inside Lekhani.
+- Turn on **Auto-compile** to refresh the PDF whenever you save.
+- Change the editor theme, and zoom or move between PDF pages.
 
-- **Rust** (edition 2021)
-- A LaTeX distribution (e.g., [MiKTeX](https://miktex.org/), [TeX Live](https://tug.org/texlive/)) providing `pdflatex`
-- An optional PDF rasterizer for the inline preview:
-  - [mupdf-tools](https://mupdf.com/) (`mutool` / `mudraw`)
-  - [Ghostscript](https://ghostscript.com/) (`gs` / `gswin64c`)
-  - [poppler](https://poppler.freedesktop.org/) (`pdftoppm`)
-  - If none are found, the PDF opens in the system's default viewer
+## Before you begin
 
-### Key design decisions
+Lekhani is the editor; a LaTeX distribution is needed to turn your document into a PDF. Install one for your computer before compiling:
 
-- **Module-per-feature** — UI panels are split into separate files under `app/`, each implementing a method on `App`. Rust's child-module privacy allows them to access `App`'s private fields without `pub(crate)` leakage.
-- **Channel-based concurrency** — Both compilation and PDF rendering run on background threads. Events are delivered to the main UI loop via `mpsc` channels, keeping the UI responsive.
-- **Atomic file saves** — Files are written to a `.tex.tmp` temporary file and then renamed atomically to prevent data loss.
-- **Multiplicative zoom** — Uses egui's unified `zoom_delta()` input, supporting both trackpad pinch gestures and Ctrl+scroll in a single code path.
+- **Windows:** [MiKTeX](https://miktex.org/)
+- **macOS:** [MacTeX](https://www.tug.org/mactex/) or [TeX Live](https://tug.org/texlive/)
+- **Linux:** [TeX Live](https://tug.org/texlive/)
 
-## Usage
+The built-in PDF preview also needs a PDF rendering tool. Lekhani can use [MuPDF](https://mupdf.com/), [Ghostscript](https://ghostscript.com/), or [Poppler](https://poppler.freedesktop.org/). If none is installed, compilation can still create a PDF, but it will not appear in Lekhani's preview pane.
 
-| Shortcut / Action | Description |
+## Get started
+
+1. [Download Lekhani](https://github.com/borneelphukan/lekhani-latex/releases) for your operating system and install it.
+2. Open Lekhani and choose **File → New Document** to start writing, or **File → Open…** to continue an existing `.tex` file.
+3. Save your document with **File → Save**.
+4. Select **Compile** to create a PDF. The preview appears in the right-hand pane.
+
+## Everyday use
+
+| To… | Do this |
 |---|---|
-| File > New Document | Create a new `.tex` file (creates a project folder) |
-| File > Open… | Open an existing `.tex`, `.sty`, or `.cls` file |
-| File > Save / Save As… | Save the current document |
-| Compile button | Run `pdflatex` on the current file |
-| Auto-compile toggle | Recompile automatically after each save |
-| Ctrl+Scroll / Pinch | Zoom the PDF preview in/out |
-| − / + buttons | Zoom the PDF preview |
-| ◀ / ▶ buttons | Navigate preview pages |
-| View > Toggle Preview | Show/hide the preview panel |
+| Create or open a document | Choose **New Document** or **Open…** from the **File** menu |
+| Save your work | Choose **Save** or **Save As…** from the **File** menu |
+| Create or refresh the PDF | Select **Compile** |
+| Refresh the PDF whenever you save | Turn on **Auto-compile** |
+| Show or hide the PDF pane | Select **View → Toggle Preview** or use the preview button |
+| Move through the PDF | Use the page arrows in the preview pane |
+| Make the PDF larger or smaller | Use the zoom controls, or pinch/hold Ctrl while scrolling |
+| Switch between light and dark appearance | Choose **Settings → Theme** |
+
+## If something goes wrong
+
+- **Compile is unavailable:** Save the document first and make sure a LaTeX distribution is installed.
+- **The PDF does not appear inside Lekhani:** Install one of the PDF rendering tools listed above, then reopen Lekhani. You can also open the generated PDF with another PDF viewer.
+- **The document reports a missing package:** Install that package using your LaTeX distribution's package manager.
+
+## About the project
+
+Lekhani is free and open source under the [MIT License](LICENSE). You can [browse the source code](https://github.com/borneelphukan/lekhani-latex) or [report a problem](https://github.com/borneelphukan/lekhani-latex/issues).
