@@ -72,7 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libx11-6 libx11-xcb1 libxcb1 libxcursor1 libxi6 libxkbcommon0 \
       libxkbcommon-x11-0 libxrender1 \
       libvulkan1 mesa-vulkan-drivers \
-      texlive-latex-recommended latexmk \
+      texlive-latex-recommended texlive-fonts-recommended latexmk \
       poppler-utils \
       xvfb x11vnc novnc websockify openbox \
       dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk \
