@@ -33,6 +33,10 @@ lekhani-latex/
 │       │       └── preview_panel.rs preview toolbar and page list
 │       └── components/        button/dropdown/textfield factories
 ├── installer/lekhani-latex.iss Inno Setup script
+├── Dockerfile                 multi-stage container image (rust build stage, runtime with TeX + noVNC)
+├── .dockerignore              keeps target/, website/, context/, packaging/ out of the image build
+├── docker/entrypoint.sh       Xvfb/x11vnc/noVNC/dbus+portal startup, or X11 passthrough
+├── docker-compose.yml         one-command run; browser entry on :6080, ./documents → /workspace
 ├── packaging/
 │   ├── debian/                build-deb.sh, desktop, AppStream, maintainer scripts, copyright
 │   ├── rpm/                   build-rpm.sh
@@ -82,6 +86,7 @@ winit = "0.30"
 | LLM request/prompt/response | `gui/src/app/layout/menubar.rs` | `do_llm_correction` spawns the thread. |
 | LLM settings window | `gui/src/app/mod.rs` | `llm_settings_dialog` uses an immediate viewport. |
 | Packaging metadata/scripts | `packaging/**` | Scripts read a prebuilt binary. |
+| Container execution | `Dockerfile`, `docker-compose.yml`, `docker/entrypoint.sh` | Demo/trial path; see [10-build-run-and-config.md](10-build-run-and-config.md) §8. |
 | Release orchestration | `.github/workflows/release.yml` | Version read from `Cargo.toml`. |
 | Landing/download site | `website/src/**` | `HashRouter`, base `/lekhani-latex/`. |
 

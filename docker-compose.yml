@@ -1,0 +1,32 @@
+# Lekhani Latex in Docker.
+#
+#   docker compose up --build
+#
+# The intended way to open the app is the browser: after the build finishes,
+# go to http://localhost:6080/vnc.html. Documents live in ./documents on the
+# host and in /workspace inside the container.
+#
+# On Linux, Docker creates ./documents as root, so give the container user
+# (uid 1000) write access first:
+#
+#   mkdir -p documents && sudo chown 1000:1000 documents
+
+services:
+  lekhani:
+    build: .
+    image: lekhani-latex:local
+    ports:
+      - "${LEKHANI_WEB_PORT:-6080}:6080"
+    environment:
+      SCREEN_SIZE: "${LEKHANI_SCREEN_SIZE:-1600x900x24}"
+    volumes:
+      - ./documents:/workspace
+      - lekhani-config:/home/lekhani/.config
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6080"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+
+volumes:
+  lekhani-config:

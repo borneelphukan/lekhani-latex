@@ -6,7 +6,7 @@ Four workflows live in `.github/workflows/`: `ci.yml`, `audit.yml`, `release.yml
 
 | Workflow | Trigger | Purpose | Publishes |
 |---|---|---|---|
-| `ci.yml` | push to `main`, PRs, dispatch (path-filtered) | fmt + clippy + tests + packaging-asset validation | workflow artifacts only (none) |
+| `ci.yml` | push to `main`, PRs, dispatch (path-filtered) | fmt + clippy + tests + packaging-asset validation + Docker image smoke test | workflow artifacts only (none) |
 | `audit.yml` | weekly (Sun 06:00 UTC), dependency-config changes, PRs, dispatch | `cargo audit` against `Cargo.lock` | step summary |
 | `release.yml` | push to `main`, `v*` tags, PRs, dispatch, weekly Mon 05:37 UTC | build every distributable, apt repository, landing page | GitHub Release (tags), workflow artifacts (other runs), GitHub Pages |
 | `website.yml` | PRs touching `website/**`, dispatch | lint + type-check + build the site | nothing (validation only) |
@@ -17,7 +17,7 @@ Four workflows live in `.github/workflows/`: `ci.yml`, `audit.yml`, `release.yml
 
 ### Triggers and options
 
-- Path filters: `core/**`, `compiler/**`, `gui/**`, `**/Cargo.toml`, `Cargo.lock`, `assets/**`, `packaging/**`, `installer/**`, and the workflow itself.
+- Path filters: `core/**`, `compiler/**`, `gui/**`, `**/Cargo.toml`, `Cargo.lock`, `assets/**`, `packaging/**`, `installer/**`, `Dockerfile`, `.dockerignore`, `docker/**`, `docker-compose.yml`, and the workflow itself.
 - `concurrency: ci-${{ github.ref }}` with `cancel-in-progress: true`.
 - `permissions: contents: read`.
 - `CARGO_TERM_COLOR: always`, `RUST_BACKTRACE: 1`, `CARGO_INCREMENTAL: 0`.
@@ -42,6 +42,10 @@ Validates packaging metadata and script syntax:
 - `bash -n` on every shell packaging script, `sh -n` on maintainer scripts, `python3 -m py_compile packaging/apt/build-repo.py`.
 
 Adding a new packaging script means adding it here, or its syntax errors are not caught until a release.
+
+### Job `docker`
+
+Builds the multi-stage `Dockerfile` with buildx and GitHub Actions layer caching (`docker/build-push-action`, `load: true`), then runs the image and polls `http://127.0.0.1:6080/vnc.html` — the intended browser entry point — before asserting the container is still running. Because `docker/entrypoint.sh` ends with `exec "$@"`, an app crash (missing runtime library, no Vulkan adapter, broken display stack) exits the container and fails the job. See [10-build-run-and-config.md](10-build-run-and-config.md) §8 for what the image contains.
 
 ## 3. `audit.yml`
 

@@ -201,3 +201,36 @@ Manual smoke test:
 | AI request hangs | No timeout is configured; the request thread waits on `ureq`. |
 | App freezes when saving/compiling | Save and the `join()` of the previous compile run on the UI thread. |
 | `cargo test` passes instantly | There are no tests. |
+
+## 8. Running in Docker
+
+`Dockerfile`, `.dockerignore`, `docker/entrypoint.sh`, and `docker-compose.yml` run the editor with a complete TeX toolchain in one container. It is a demo/trial path, not a packaging target; native installers remain canonical ([12-packaging-and-release.md](12-packaging-and-release.md)).
+
+### 8.1 Usage
+
+```bash
+docker compose up --build      # then open http://localhost:6080/vnc.html
+docker build -t lekhani-latex .
+docker run --rm -p 6080:6080 -v "$PWD:/workspace" lekhani-latex
+docker run --rm -p 6080:6080 -v "$PWD:/workspace" lekhani-latex /workspace/main.tex
+```
+
+The **browser is the intended entry point**. The container starts Xvfb + openbox + x11vnc (loopback only) + websockify/noVNC on `NOVNC_PORT` (default 6080). `docker-compose.yml` mounts `./documents` to `/workspace` and a named volume to `/home/lekhani/.config`, so documents and settings survive restarts. A bare path argument is routed to the binary (`App::new` opens `argv[1]`); anything else (`bash`, `lekhani-latex ...`) execs as given.
+
+X11 passthrough: with `DISPLAY` set and the matching `/tmp/.X11-unix/X<N>` socket mounted, the entrypoint execs the app against that server and starts no VNC stack. Knobs: `SCREEN_SIZE` (default `1600x900x24`), `XVFB_DISPLAY`, `VNC_PORT`, `NOVNC_PORT`.
+
+### 8.2 Image contents
+
+- **Build stage** — `rust:1.99.1-bookworm` (same pin as CI) plus the CI dev headers from §1. Stub crate sources build all third-party deps first, so image rebuilds after a source edit only recompile `core`/`compiler`/`gui`. Both stages use `--release --locked`.
+- **Runtime stage** — `debian:bookworm-slim` with: the explicit dlopened GUI library list from `packaging/debian/build-deb.sh`; `libvulkan1` + `mesa-vulkan-drivers` (eframe is built with `wgpu`, which has no GL fallback on Linux, so lavapipe software rendering is required); `ca-certificates` (ureq/update check); `texlive-latex-recommended` + `latexmk` + `poppler-utils` (`pdftoppm` renders, `pdfinfo` counts; `mutool`/`gs` are deliberately absent so renderer discovery settles on `pdftoppm`); `xvfb x11vnc novnc websockify openbox`; `dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk` — `rfd`'s default `xdg-portal` backend returns nothing usable without a session bus plus portal, so Open/Save dialogs would silently fail.
+- Runs as non-root `lekhani` (uid 1000); workdir `/workspace`.
+- `.dockerignore` excludes `target/`, `website/` (~140 MB), `context/`, `packaging/`, `installer/`, and all assets except `logo.png`, which `main.rs` embeds via `include_bytes!`.
+
+### 8.3 Container-specific behaviour
+
+- **In-app updates do nothing useful** (they query `example/lekhani-latex` and download a Windows `.exe`); rebuild/pull the image instead.
+- **TeX additions go through apt** (`texlive-latex-extra`, …); `tlmgr` is not installed, so AI package install always fails in the container.
+- The Linux theme poller calls `gsettings`, which is absent and fails silently; `System` theme resolves to dark.
+- Preview PNGs accumulate in container `/tmp` as usual and vanish with the container.
+- On native Linux the host documents folder must be writable by uid 1000 (`docker compose` creates `./documents` as root); Docker Desktop handles this transparently.
+- CI coverage: the `docker` job in `ci.yml` builds the image and smoke-tests the noVNC port and container liveness. See [11-ci-cd.md](11-ci-cd.md) §2.

@@ -12,6 +12,10 @@ on:
       - "assets/**"
       - "packaging/**"
       - "installer/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker/**"
+      - "docker-compose.yml"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
@@ -23,6 +27,10 @@ on:
       - "assets/**"
       - "packaging/**"
       - "installer/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker/**"
+      - "docker-compose.yml"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -111,3 +119,45 @@ jobs:
           bash -n packaging/macos/build-dmg.sh
           sh -n packaging/apt/install.sh
           python3 -m py_compile packaging/apt/build-repo.py
+
+  docker:
+    name: Docker image builds and starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: lekhani-latex:ci
+          load: true
+          cache-from: type=gha,scope=docker
+          cache-to: type=gha,scope=docker,mode=max
+
+      - name: Smoke test the noVNC entry point
+        # The intended way to open the app is the browser on :6080, so the
+        # image must serve noVNC. The container runs the editor as PID 1's
+        # final exec, so if the app dies (missing runtime library, no Vulkan
+        # adapter, broken display stack) the smoke test catches it too.
+        run: |
+          docker run -d --name lekhani-smoke -p 6080:6080 lekhani-latex:ci
+          ok=0
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:6080/vnc.html; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs lekhani-smoke
+          if [ "$ok" != "1" ]; then
+            echo "noVNC never answered on :6080"
+            exit 1
+          fi
+          running=$(docker inspect -f '{{.State.Running}}' lekhani-smoke)
+          docker rm -f lekhani-smoke
+          if [ "$running" != "true" ]; then
+            echo "the app exited during the smoke test"
+            exit 1
+          fi

@@ -55,6 +55,7 @@ This directory is the **authoritative, current context** for anyone (human or AI
 10. **Releases are tag-driven and multi-platform.** `release.yml` reads the version from `Cargo.toml`, builds Debian/RPM/tarball/AppImage/Windows installer+zip/universal DMG, verifies the expected filenames, writes `SHA256SUMS`, and attaches everything to a `v*` GitHub Release. Non-tag runs publish the same bundle as a workflow artifact.
 11. **GitHub Pages is both the landing page and the apt repository.** The Debian amd64 package is indexed under `/apt`, `install.sh` is served at the site root, and the React site is copied over the same Pages artifact at the root.
 12. **Repository ↔ code URL drift.** The real repository is `borneelphukan/lekhani-latex`, but the in-app update checker, About links, and several website download links still use `example/lekhani-latex` or non-existent release tags. See [14-conventions-and-gotchas.md](14-conventions-and-gotchas.md) before touching those areas.
+13. **Docker is a supported run path.** `Dockerfile` + `docker-compose.yml` + `docker/entrypoint.sh` run the editor headless with TeX Live, poppler, and noVNC; the browser at port `6080` is the intended entry point. The `docker` job in `ci.yml` builds and smoke-tests the image. See [10-build-run-and-config.md](10-build-run-and-config.md) §8.
 
 ---
 
@@ -70,6 +71,7 @@ This directory is the **authoritative, current context** for anyone (human or AI
 - Packaging: `packaging/**`, `installer/lekhani-latex.iss`.
 - Release automation: `.github/workflows/{ci,audit,release,website}.yml`.
 - Website: `website/src/**`, `website/vite.config.ts`.
+- Container image: `Dockerfile`, `.dockerignore`, `docker/entrypoint.sh`, `docker-compose.yml`.
 
 ## Keeping this pack accurate
 

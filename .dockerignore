@@ -1,0 +1,18 @@
+# Never part of the Rust build. These only bloat the context (website/ is
+# ~140 MB with node_modules) or invalidate the layer cache unnecessarily.
+.git
+.github
+target
+website
+context
+packaging
+installer
+document.log
+README.md
+Dockerfile
+.dockerignore
+
+# Only assets/logo.png is compiled into the binary (include_bytes!).
+assets/cover.png
+assets/logo.ico
+assets/lekhani-latex.desktop
